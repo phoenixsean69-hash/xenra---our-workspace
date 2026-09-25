@@ -1,6 +1,7 @@
 import type { BottomPanelTab } from "../types";
 import type { RuntimeTraceEvent, RuntimeTraceResult } from "../runtime/types";
 import ExecutionPanel from "./ExecutionPanel";
+import { CloseIcon } from "./Icons";
 import ResizeHandle from "./ResizeHandle";
 import TerminalPanel from "./TerminalPanel";
 
@@ -53,6 +54,7 @@ export default function BottomPanel({
         direction={-1}
         label="Resize bottom panel"
       />
+
       <div className="bottom-tabs">
         {(["terminal", "output", "problems", "execution"] as BottomPanelTab[]).map((tab) => (
           <button
@@ -64,8 +66,17 @@ export default function BottomPanel({
             {tab.toUpperCase()}
           </button>
         ))}
+
         {onClose && (
-          <button className="panel-close-button" type="button" onClick={onClose} title="Close panel">Ã—</button>
+          <button
+            className="panel-close-button"
+            type="button"
+            onClick={onClose}
+            title="Close panel"
+            aria-label="Close panel"
+          >
+            <CloseIcon />
+          </button>
         )}
       </div>
 
@@ -73,12 +84,15 @@ export default function BottomPanel({
         <div className={activeTab === "terminal" ? "panel-page visible" : "panel-page"}>
           <TerminalPanel cwd={cwd} onCwdChange={onCwdChange} visible={activeTab === "terminal"} />
         </div>
+
         <div className={activeTab === "output" ? "panel-page visible" : "panel-page"}>
           <pre className="output-view">{output || "Build and run output will appear here."}</pre>
         </div>
+
         <div className={activeTab === "problems" ? "panel-page visible" : "panel-page"}>
           <div className="problems-empty">No problems reported.</div>
         </div>
+
         <div className={activeTab === "execution" ? "panel-page visible" : "panel-page"}>
           <ExecutionPanel
             result={traceResult}
