@@ -1,6 +1,7 @@
 import type { BottomPanelTab } from "../types";
 import type { RuntimeTraceEvent, RuntimeTraceResult } from "../runtime/types";
 import ExecutionPanel from "./ExecutionPanel";
+import ResizeHandle from "./ResizeHandle";
 import TerminalPanel from "./TerminalPanel";
 
 type Props = {
@@ -9,6 +10,11 @@ type Props = {
   cwd: string;
   onCwdChange: (cwd: string) => void;
   output: string;
+  panelHeight: number;
+  minPanelHeight: number;
+  maxPanelHeight: () => number;
+  defaultPanelHeight: number;
+  onPanelHeightChange: (height: number) => void;
   traceResult: RuntimeTraceResult | null;
   traceRunning: boolean;
   onTraceAgain: () => void;
@@ -23,6 +29,11 @@ export default function BottomPanel({
   cwd,
   onCwdChange,
   output,
+  panelHeight,
+  minPanelHeight,
+  maxPanelHeight,
+  defaultPanelHeight,
+  onPanelHeightChange,
   traceResult,
   traceRunning,
   onTraceAgain,
@@ -31,7 +42,17 @@ export default function BottomPanel({
   onClose
 }: Props) {
   return (
-    <section className="bottom-panel">
+    <section className="bottom-panel" style={{ height: panelHeight }}>
+      <ResizeHandle
+        orientation="horizontal"
+        value={panelHeight}
+        min={minPanelHeight}
+        max={maxPanelHeight}
+        defaultValue={defaultPanelHeight}
+        onChange={onPanelHeightChange}
+        direction={-1}
+        label="Resize bottom panel"
+      />
       <div className="bottom-tabs">
         {(["terminal", "output", "problems", "execution"] as BottomPanelTab[]).map((tab) => (
           <button
@@ -44,7 +65,7 @@ export default function BottomPanel({
           </button>
         ))}
         {onClose && (
-          <button className="panel-close-button" type="button" onClick={onClose} title="Close panel">×</button>
+          <button className="panel-close-button" type="button" onClick={onClose} title="Close panel">Ã—</button>
         )}
       </div>
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import type { BottomPanelTab, FileNode, OpenFile, SearchResult, SidebarView } from "./types";
 import type { RuntimeTraceEvent, RuntimeTraceMessage, RuntimeTraceResult } from "./runtime/types";
 import {
@@ -21,8 +22,33 @@ import BottomPanel from "./components/BottomPanel";
 import MenuBar, { type MenuAction } from "./components/MenuBar";
 import SearchPanel from "./components/SearchPanel";
 import SourceControlPanel from "./components/SourceControlPanel";
+import ResizeHandle from "./components/ResizeHandle";
 
 const LAST_PROJECT_KEY = "xenra:last-project";
+const SIDEBAR_WIDTH_KEY = "xenra:layout:sidebar-width";
+const BOTTOM_PANEL_HEIGHT_KEY = "xenra:layout:bottom-panel-height";
+
+const SIDEBAR_DEFAULT_WIDTH = 300;
+const SIDEBAR_MIN_WIDTH = 220;
+const SIDEBAR_MAX_WIDTH = 480;
+
+const BOTTOM_PANEL_DEFAULT_HEIGHT = 230;
+const BOTTOM_PANEL_MIN_HEIGHT = 130;
+const BOTTOM_PANEL_MAX_HEIGHT = 520;
+const EDITOR_MIN_HEIGHT = 180;
+
+function clampDimension(value: number, min: number, max: number) {
+  return Math.min(Math.max(min, max), Math.max(min, value));
+}
+
+function readStoredDimension(key: string, fallback: number, min: number, max: number) {
+  try {
+    const stored = Number.parseFloat(localStorage.getItem(key) ?? "");
+    return Number.isFinite(stored) ? clampDimension(stored, min, max) : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 function defaultRunCommand(path: string): string | null {
   const ext = path.split(".").pop()?.toLowerCase();
@@ -53,6 +79,12 @@ export default function App() {
   const [activeView, setActiveView] = useState<SidebarView>("explorer");
   const [bottomTab, setBottomTab] = useState<BottomPanelTab>("terminal");
   const [bottomOpen, setBottomOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(() =>
+    readStoredDimension(SIDEBAR_WIDTH_KEY, SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH)
+  );
+  const [bottomPanelHeight, setBottomPanelHeight] = useState(() =>
+    readStoredDimension(BOTTOM_PANEL_HEIGHT_KEY, BOTTOM_PANEL_DEFAULT_HEIGHT, BOTTOM_PANEL_MIN_HEIGHT, BOTTOM_PANEL_MAX_HEIGHT)
+  );
   const [terminalCwd, setTerminalCwd] = useState("");
   const [output, setOutput] = useState("");
   const [status, setStatus] = useState("Ready");
@@ -63,6 +95,7 @@ export default function App() {
   const traceSessionRef = useRef<string | null>(null);
   const traceQueueRef = useRef<RuntimeTraceMessage[]>([]);
   const traceFlushTimerRef = useRef<number | null>(null);
+  const mainColumnRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const flush = () => {
@@ -177,6 +210,43 @@ export default function App() {
       }
     };
   }, []);
+  const getSidebarMax = useCallback(() => {
+    const activityWidth = window.innerWidth <= 900 ? 54 : window.innerWidth <= 1180 ? 58 : 64;
+    return Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, window.innerWidth - activityWidth - 5 - 420));
+  }, []);
+
+  const getBottomPanelMax = useCallback(() => {
+    const availableHeight = mainColumnRef.current?.clientHeight ?? Math.max(400, window.innerHeight - 48);
+    return Math.max(
+      BOTTOM_PANEL_MIN_HEIGHT,
+      Math.min(BOTTOM_PANEL_MAX_HEIGHT, availableHeight - 60 - EDITOR_MIN_HEIGHT)
+    );
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(sidebarWidth)));
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      localStorage.setItem(BOTTOM_PANEL_HEIGHT_KEY, String(Math.round(bottomPanelHeight)));
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [bottomPanelHeight]);
+
+  useEffect(() => {
+    const clampLayout = () => {
+      setSidebarWidth((current) => clampDimension(current, SIDEBAR_MIN_WIDTH, getSidebarMax()));
+      setBottomPanelHeight((current) => clampDimension(current, BOTTOM_PANEL_MIN_HEIGHT, getBottomPanelMax()));
+    };
+    clampLayout();
+    window.addEventListener("resize", clampLayout);
+    return () => window.removeEventListener("resize", clampLayout);
+  }, [getBottomPanelMax, getSidebarMax]);
+
   const activeFile = useMemo(
     () => openFiles.find((file) => file.path === activePath) ?? null,
     [openFiles, activePath]
@@ -727,7 +797,10 @@ export default function App() {
         </div>
       </header>
 
-      <div className="workbench">
+      <div
+        className="workbench"
+        style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+      >
         <aside className="activity-bar">
           <div className="activity-top">
             <button
@@ -794,7 +867,7 @@ export default function App() {
             <aside className="explorer-panel empty-project-panel">
               <div className="explorer-heading">
                 <span>EXPLORER</span>
-                <button className="ellipsis-button" type="button" onClick={() => void openProject()} title="Open folder">Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢</button>
+                <button className="ellipsis-button" type="button" onClick={() => void openProject()} title="Open folder">ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢</button>
               </div>
               <div className="empty-project-content">
                 <span>No folder open</span>
@@ -816,7 +889,17 @@ export default function App() {
           />
         )}
 
-        <section className="main-column">
+        <ResizeHandle
+          orientation="vertical"
+          value={sidebarWidth}
+          min={SIDEBAR_MIN_WIDTH}
+          max={getSidebarMax}
+          defaultValue={SIDEBAR_DEFAULT_WIDTH}
+          onChange={setSidebarWidth}
+          label="Resize side panel"
+        />
+
+        <section ref={mainColumnRef} className="main-column">
           <EditorTabs
             files={openFiles}
             activePath={activePath}
@@ -835,6 +918,11 @@ export default function App() {
               cwd={terminalCwd}
               onCwdChange={setTerminalCwd}
               output={output}
+              panelHeight={bottomPanelHeight}
+              minPanelHeight={BOTTOM_PANEL_MIN_HEIGHT}
+              maxPanelHeight={getBottomPanelMax}
+              defaultPanelHeight={BOTTOM_PANEL_DEFAULT_HEIGHT}
+              onPanelHeightChange={setBottomPanelHeight}
               traceResult={traceResult}
               traceRunning={traceRunning}
               onTraceAgain={() => void traceActive()}
@@ -853,14 +941,14 @@ export default function App() {
           <section className="overlay-dialog" onMouseDown={(event) => event.stopPropagation()}>
             <header>
               <span>{overlay === "about" ? "About XENRA" : "Keyboard Shortcuts"}</span>
-              <button type="button" onClick={() => setOverlay(null)}>Ãƒâ€”</button>
+              <button type="button" onClick={() => setOverlay(null)}>ÃƒÆ’Ã¢â‚¬â€</button>
             </header>
 
             {overlay === "about" ? (
               <div className="about-body">
                 <strong>XENRA 0.1</strong>
                 <p>Production-grade development and execution environment.</p>
-                <p>Electron Ã‚Â· React Ã‚Â· Monaco Ã‚Â· xterm</p>
+                <p>Electron Ãƒâ€šÃ‚Â· React Ãƒâ€šÃ‚Â· Monaco Ãƒâ€šÃ‚Â· xterm</p>
               </div>
             ) : (
               <div className="shortcut-table">
