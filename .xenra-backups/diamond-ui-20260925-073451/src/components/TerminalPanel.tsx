@@ -28,27 +28,17 @@ export default function TerminalPanel({ cwd, onCwdChange, visible }: Props) {
     const terminal = new Terminal({
       cursorBlink: true,
       fontSize: 13,
-      lineHeight: 1.25,
+      lineHeight: 1.2,
       fontFamily: '"Cascadia Mono", Consolas, monospace',
       theme: {
-        background: "#111214",
-        foreground: "#C4CBDA",
-        cursor: "#F2B705",
-        cursorAccent: "#111214",
-        selectionBackground: "#66511F88",
-        black: "#111214",
-        brightBlack: "#717888",
-        yellow: "#F2B705",
-        brightYellow: "#FFD447",
-        cyan: "#7FDBCA",
-        brightCyan: "#9CE3D8",
-        red: "#E66A6A",
-        brightRed: "#FF8B8B"
+        background: "#0a0d12",
+        foreground: "#c9d2df",
+        cursor: "#d8dee9",
+        selectionBackground: "#293241"
       },
       convertEol: true,
       scrollback: 4000
     });
-
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(hostRef.current);
@@ -56,11 +46,11 @@ export default function TerminalPanel({ cwd, onCwdChange, visible }: Props) {
     fitRef.current = fit;
     fit.fit();
 
-    terminal.writeln("\x1b[33mXENRA Terminal\x1b[0m");
+    terminal.writeln("XENRA Terminal");
     terminal.writeln("Commands run inside the current project. Type 'clear' to reset.\r\n");
 
     const prompt = () => {
-      terminal.write(`\x1b[90m${cwdRef.current}\x1b[0m\r\n\x1b[33m>\x1b[0m `);
+      terminal.write(`\x1b[90m${cwdRef.current}\x1b[0m\r\n\x1b[36m>\x1b[0m `);
     };
 
     prompt();
@@ -105,9 +95,7 @@ export default function TerminalPanel({ cwd, onCwdChange, visible }: Props) {
             cwdRef.current = result.cwd;
             onCwdChange(result.cwd);
           }
-          if (result.exitCode !== 0) {
-            terminal.writeln(`\x1b[31mProcess exited with code ${result.exitCode}\x1b[0m`);
-          }
+          if (result.exitCode !== 0) terminal.writeln(`\x1b[31mProcess exited with code ${result.exitCode}\x1b[0m`);
         } catch (error) {
           terminal.writeln(`\x1b[31m${String(error)}\x1b[0m`);
         } finally {
@@ -152,7 +140,7 @@ export default function TerminalPanel({ cwd, onCwdChange, visible }: Props) {
     });
 
     const resizeObserver = new ResizeObserver(() => {
-      try { fit.fit(); } catch { /* host may be hidden during layout */ }
+      try { fit.fit(); } catch { /* host may be temporarily hidden */ }
     });
     resizeObserver.observe(hostRef.current);
 
@@ -166,11 +154,12 @@ export default function TerminalPanel({ cwd, onCwdChange, visible }: Props) {
   }, [onCwdChange]);
 
   useEffect(() => {
-    if (!visible) return;
-    requestAnimationFrame(() => {
-      try { fitRef.current?.fit(); } catch { /* panel may still be sizing */ }
-      terminalRef.current?.focus();
-    });
+    if (visible) {
+      requestAnimationFrame(() => {
+        try { fitRef.current?.fit(); } catch { /* panel may still be sizing */ }
+        terminalRef.current?.focus();
+      });
+    }
   }, [visible]);
 
   return <div ref={hostRef} className="terminal-host" />;

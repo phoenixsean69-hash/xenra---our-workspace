@@ -7,6 +7,7 @@ import Explorer from "./components/Explorer";
 import EditorTabs from "./components/EditorTabs";
 import CodeEditor from "./components/CodeEditor";
 import BottomPanel from "./components/BottomPanel";
+import Welcome from "./components/Welcome";
 
 const LAST_PROJECT_KEY = "xenra:last-project";
 
@@ -15,6 +16,8 @@ function defaultRunCommand(path: string): string | null {
   const quoted = `"${path}"`;
   if (ext === "py") return `python ${quoted}`;
   if (ext === "js") return `node ${quoted}`;
+  if (ext === "java") return null;
+  if (["c", "cc", "cpp", "cxx"].includes(ext ?? "")) return null;
   if (ext === "ps1") return `powershell -ExecutionPolicy Bypass -File ${quoted}`;
   return null;
 }
@@ -36,13 +39,6 @@ export default function App() {
     [openFiles, activePath]
   );
 
-  const projectName = projectRoot ? fileName(projectRoot) : "No Folder";
-  const windowTitle = activeFile
-    ? `${activeFile.name} - ${projectName} - XENRA`
-    : projectRoot
-      ? `${projectName} - XENRA`
-      : "XENRA";
-
   const openProject = useCallback(async () => {
     try {
       const selected = await chooseProjectFolder();
@@ -52,7 +48,6 @@ export default function App() {
       setSelectedPath(selected);
       setOpenFiles([]);
       setActivePath(null);
-      setBottomOpen(true);
       localStorage.setItem(LAST_PROJECT_KEY, selected);
       setStatus(`Opened ${fileName(selected)}`);
     } catch (error) {
@@ -114,12 +109,9 @@ export default function App() {
     if (!activePath) return;
     const file = openFiles.find((item) => item.path === activePath);
     if (!file) return;
-
     try {
       await writeTextFile(file.path, file.content);
-      setOpenFiles((files) => files.map((item) =>
-        item.path === file.path ? { ...item, savedContent: item.content } : item
-      ));
+      setOpenFiles((files) => files.map((item) => item.path === file.path ? { ...item, savedContent: item.content } : item));
       setStatus(`Saved ${file.name}`);
     } catch (error) {
       setStatus(`Save failed: ${String(error)}`);
@@ -134,12 +126,13 @@ export default function App() {
       }
       if ((event.ctrlKey || event.metaKey) && event.key === "`") {
         event.preventDefault();
-        setBottomOpen((value) => !value);
+        setBottomOpen((v) => !v);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [saveActive]);
+
 
   const pathIsInside = (candidate: string, parent: string) => {
     if (candidate === parent) return true;
@@ -156,9 +149,7 @@ export default function App() {
   const handlePathRenamed = (oldPath: string, newPath: string) => {
     setOpenFiles((files) => files.map((file) => {
       const nextPath = replacePathPrefix(file.path, oldPath, newPath);
-      return nextPath === file.path
-        ? file
-        : { ...file, path: nextPath, name: fileName(nextPath), language: languageFromPath(nextPath) };
+      return nextPath === file.path ? file : { ...file, path: nextPath, name: fileName(nextPath), language: languageFromPath(nextPath) };
     }));
     setActivePath((path) => path ? replacePathPrefix(path, oldPath, newPath) : path);
     setSelectedPath(newPath);
@@ -172,9 +163,7 @@ export default function App() {
 
   const closeFile = (path: string) => {
     const file = openFiles.find((item) => item.path === path);
-    if (file && file.content !== file.savedContent && !window.confirm(`${file.name} has unsaved changes. Close anyway?`)) {
-      return;
-    }
+    if (file && file.content !== file.savedContent && !window.confirm(`${file.name} has unsaved changes. Close anyway?`)) return;
 
     const next = openFiles.filter((item) => item.path !== path);
     setOpenFiles(next);
@@ -187,7 +176,6 @@ export default function App() {
   const runActive = async () => {
     if (!activeFile || !projectRoot) return;
     await saveActive();
-
     const command = defaultRunCommand(activeFile.path);
     setBottomOpen(true);
     setBottomTab("output");
@@ -195,7 +183,7 @@ export default function App() {
     if (!command) {
       setOutput(
         `No automatic run command is configured for ${activeFile.language}.\n\n` +
-        "Use the Terminal panel for compiler commands for now."
+        `Use the Terminal panel for compiler commands for now. Build profiles will be added next.`
       );
       return;
     }
@@ -211,120 +199,70 @@ export default function App() {
     }
   };
 
+  if (!projectRoot) {
+    return (
+      <div className="app-shell welcome-mode">
+        <header className="titlebar"><div className="brand-mark">Xe</div><span>XENRA</span><div className="titlebar-spacer"/><span className="version-tag">0.1</span></header>
+        <Welcome onOpenProject={openProject} />
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell">
       <header className="titlebar">
-        <div className="title-left">
-          <div className="brand-mark">Xe</div>
-          <nav className="menu-strip" aria-label="Application menu">
-            <button type="button">File</button>
-            <button type="button">Edit</button>
-            <button type="button">Selection</button>
-            <button type="button">View</button>
-            <button type="button">Go</button>
-            <button type="button">Run</button>
-            <button type="button">Terminal</button>
-            <button type="button">Help</button>
-          </nav>
-        </div>
-
-        <div className="window-title" title={windowTitle}>{windowTitle}</div>
-
-        <div className="title-actions">
-          <span className="title-status" title={status}>{status}</span>
-          <button className="chrome-action" type="button" onClick={openProject} title="Open project folder">
-            <FolderOpenIcon />
-          </button>
-          <button className="chrome-action" type="button" onClick={saveActive} disabled={!activeFile} title="Save current file">
-            <SaveIcon />
-          </button>
-          <button className="chrome-action run-chrome-action" type="button" onClick={runActive} disabled={!activeFile} title="Run current file">
-            <PlayIcon />
-          </button>
-        </div>
+        <div className="brand-mark">UW</div>
+        <span className="title-name">XENRA</span>
+        <div className="titlebar-spacer" />
+        <button className="top-action" onClick={openProject}><FolderOpenIcon /> Open</button>
+        <button className="top-action" onClick={saveActive} disabled={!activeFile}><SaveIcon /> Save</button>
+        <button className="run-action" onClick={runActive} disabled={!activeFile}><PlayIcon /> Run</button>
       </header>
 
       <div className="workbench">
         <aside className="activity-bar">
-          <div className="activity-top">
-            <button className="active" type="button" title="Explorer"><CodeIcon /></button>
-            <button type="button" title="Search"><SearchIcon /></button>
-            <button type="button" title="Source Control"><BranchIcon /></button>
-          </div>
-          <div className="activity-bottom">
-            <button
-              className={bottomOpen ? "" : "muted"}
-              type="button"
-              title="Toggle terminal"
-              onClick={() => setBottomOpen((value) => !value)}
-            >
-              <TerminalIcon />
-            </button>
-          </div>
+          <button className="active" title="Explorer"><CodeIcon /></button>
+          <button title="Search (coming next)"><SearchIcon /></button>
+          <button title="Branches (planned)"><BranchIcon /></button>
+          <div className="activity-spacer" />
+          <button className={bottomOpen ? "" : "muted"} title="Toggle terminal" onClick={() => setBottomOpen((v) => !v)}><TerminalIcon /></button>
         </aside>
 
-        {projectRoot ? (
-          <Explorer
-            key={`${projectRoot}-${treeRevision}`}
-            rootPath={projectRoot}
-            selectedPath={selectedPath}
-            onSelectFile={openFile}
-            onSelectPath={(node) => setSelectedPath(node.path)}
-            onChanged={() => setTreeRevision((value) => value + 1)}
-            onPathRenamed={handlePathRenamed}
-            onPathDeleted={handlePathDeleted}
-          />
-        ) : (
-          <aside className="explorer-panel empty-project-panel">
-            <div className="explorer-heading">
-              <span>XENRA</span>
-              <button className="ellipsis-button" type="button" onClick={openProject} title="Open project folder">•••</button>
-            </div>
-            <div className="empty-project-content">
-              <p>No folder opened</p>
-              <button type="button" onClick={openProject}><FolderOpenIcon /> Open Folder</button>
-            </div>
-          </aside>
-        )}
+        <Explorer
+          key={`${projectRoot}-${treeRevision}`}
+          rootPath={projectRoot}
+          selectedPath={selectedPath}
+          onSelectFile={openFile}
+          onSelectPath={(node) => setSelectedPath(node.path)}
+          onChanged={() => setTreeRevision((v) => v + 1)}
+          onPathRenamed={handlePathRenamed}
+          onPathDeleted={handlePathDeleted}
+        />
 
         <section className="main-column">
-          <EditorTabs
-            files={openFiles}
-            activePath={activePath}
-            onActivate={setActivePath}
-            onClose={closeFile}
-          />
-
+          <EditorTabs files={openFiles} activePath={activePath} onActivate={setActivePath} onClose={closeFile} />
           <div className="editor-area">
             <CodeEditor file={activeFile} onChange={changeActiveContent} onSave={saveActive} />
           </div>
-
           {bottomOpen && (
-            projectRoot ? (
-              <BottomPanel
-                activeTab={bottomTab}
-                onTabChange={setBottomTab}
-                cwd={terminalCwd}
-                onCwdChange={setTerminalCwd}
-                output={output}
-                onClose={() => setBottomOpen(false)}
-              />
-            ) : (
-              <section className="bottom-panel placeholder-terminal">
-                <div className="bottom-tabs">
-                  <button className="active" type="button">TERMINAL</button>
-                  <button type="button">OUTPUT</button>
-                  <button className="panel-close-button" type="button" onClick={() => setBottomOpen(false)}>×</button>
-                </div>
-                <div className="placeholder-terminal-body">
-                  <span>XENRA Terminal</span>
-                  <span className="terminal-muted">Open a project folder to start a terminal session.</span>
-                </div>
-              </section>
-            )
+            <BottomPanel
+              activeTab={bottomTab}
+              onTabChange={setBottomTab}
+              cwd={terminalCwd}
+              onCwdChange={setTerminalCwd}
+              output={output}
+            />
           )}
         </section>
       </div>
+
+      <footer className="statusbar">
+        <span className="status-branch"><BranchIcon /> main <span className="future-label">branching next</span></span>
+        <span>{status}</span>
+        <span className="status-spacer" />
+        <span>{activeFile?.language ?? "No file"}</span>
+        <span>{fileName(projectRoot)}</span>
+      </footer>
     </div>
   );
 }

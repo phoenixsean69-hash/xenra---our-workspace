@@ -17,16 +17,10 @@ function createWindow() {
     height: 900,
     minWidth: 960,
     minHeight: 620,
-    backgroundColor: "#111214",
+    backgroundColor: "#0d1016",
     show: false,
     autoHideMenuBar: true,
     title: "XENRA",
-    titleBarStyle: "hidden",
-    titleBarOverlay: {
-      color: "#18191d",
-      symbolColor: "#c4cbda",
-      height: 48
-    },
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,

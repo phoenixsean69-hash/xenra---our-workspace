@@ -7,35 +7,18 @@ type Props = {
   cwd: string;
   onCwdChange: (cwd: string) => void;
   output: string;
-  onClose?: () => void;
 };
 
-export default function BottomPanel({
-  activeTab,
-  onTabChange,
-  cwd,
-  onCwdChange,
-  output,
-  onClose
-}: Props) {
+export default function BottomPanel({ activeTab, onTabChange, cwd, onCwdChange, output }: Props) {
   return (
     <section className="bottom-panel">
       <div className="bottom-tabs">
         {(["terminal", "output", "problems"] as BottomPanelTab[]).map((tab) => (
-          <button
-            type="button"
-            key={tab}
-            className={activeTab === tab ? "active" : ""}
-            onClick={() => onTabChange(tab)}
-          >
+          <button key={tab} className={activeTab === tab ? "active" : ""} onClick={() => onTabChange(tab)}>
             {tab.toUpperCase()}
           </button>
         ))}
-        {onClose && (
-          <button className="panel-close-button" type="button" onClick={onClose} title="Close panel">×</button>
-        )}
       </div>
-
       <div className="bottom-content">
         <div className={activeTab === "terminal" ? "panel-page visible" : "panel-page"}>
           <TerminalPanel cwd={cwd} onCwdChange={onCwdChange} visible={activeTab === "terminal"} />
@@ -44,7 +27,7 @@ export default function BottomPanel({
           <pre className="output-view">{output || "Build and run output will appear here."}</pre>
         </div>
         <div className={activeTab === "problems" ? "panel-page visible" : "panel-page"}>
-          <div className="problems-empty">No problems reported.</div>
+          <div className="problems-empty">No problems reported yet.</div>
         </div>
       </div>
     </section>

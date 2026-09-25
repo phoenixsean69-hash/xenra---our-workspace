@@ -29,10 +29,10 @@ export default function CodeEditor({ file, onChange, onSave }: Props) {
   if (!file) {
     return (
       <div className="empty-editor">
-        <div className="empty-mark">U</div>
+        <div className="empty-mark">Xe</div>
         <h2>XENRA</h2>
-        <p>Open a file from the Explorer to start coding.</p>
-        <div className="shortcut-hint"><kbd>Ctrl</kbd><span>+</span><kbd>S</kbd><span>Save current file</span></div>
+        <p>Open a folder, then choose a file from the explorer.</p>
+        <div className="shortcut-hint"><kbd>Ctrl</kbd><span>+</span><kbd>`</kbd><span>Toggle terminal</span></div>
       </div>
     );
   }
@@ -42,24 +42,72 @@ export default function CodeEditor({ file, onChange, onSave }: Props) {
       path={file.path}
       language={file.language}
       value={file.content}
-      theme="vs-dark"
+      theme="xenra-diamond"
+      beforeMount={(monacoApi) => {
+        monacoApi.editor.defineTheme("xenra-diamond", {
+          base: "vs-dark",
+          inherit: true,
+          rules: [
+            { token: "comment", foreground: "737987", fontStyle: "italic" },
+            { token: "keyword", foreground: "C792EA" },
+            { token: "number", foreground: "FFD866" },
+            { token: "string", foreground: "F2B705" },
+            { token: "type", foreground: "82AAFF" },
+            { token: "class", foreground: "82AAFF" },
+            { token: "function", foreground: "7FDBCA" },
+            { token: "variable", foreground: "C4CBDA" },
+            { token: "delimiter", foreground: "9099AC" },
+            { token: "tag", foreground: "F2B705" },
+            { token: "attribute.name", foreground: "7FDBCA" }
+          ],
+          colors: {
+            "editor.background": "#111214",
+            "editor.foreground": "#C4CBDA",
+            "editorLineNumber.foreground": "#626978",
+            "editorLineNumber.activeForeground": "#E6C55A",
+            "editorCursor.foreground": "#F2B705",
+            "editor.selectionBackground": "#5C461E66",
+            "editor.inactiveSelectionBackground": "#4B3A1844",
+            "editor.lineHighlightBackground": "#191A1E",
+            "editorIndentGuide.background1": "#292B31",
+            "editorIndentGuide.activeBackground1": "#68541B",
+            "editorBracketMatch.background": "#F2B7051A",
+            "editorBracketMatch.border": "#A98418",
+            "editorGutter.background": "#111214",
+            "editorWidget.background": "#1D1F24",
+            "editorWidget.border": "#3A3C45",
+            "editorHoverWidget.background": "#1D1F24",
+            "editorHoverWidget.border": "#3A3C45",
+            "editorSuggestWidget.background": "#202229",
+            "editorSuggestWidget.border": "#3C3F49",
+            "editorSuggestWidget.selectedBackground": "#4A421F",
+            "editorSuggestWidget.highlightForeground": "#FFD447",
+            "minimap.background": "#111214",
+            "scrollbarSlider.background": "#61677640",
+            "scrollbarSlider.hoverBackground": "#737A8A5A",
+            "scrollbarSlider.activeBackground": "#F2B70552"
+          }
+        });
+      }}
       onChange={(value) => onChange(value ?? "")}
       onMount={(editor) => {
         editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, onSave);
         editor.focus();
       }}
       options={{
-        fontSize: 14,
-        lineHeight: 22,
-        minimap: { enabled: true, scale: 1 },
+        fontFamily: '"Cascadia Code", "Cascadia Mono", Consolas, monospace',
+        fontSize: 15,
+        lineHeight: 24,
+        minimap: { enabled: true, scale: 1, showSlider: "mouseover" },
         smoothScrolling: true,
-        padding: { top: 12 },
+        padding: { top: 12, bottom: 12 },
         automaticLayout: true,
         scrollBeyondLastLine: false,
         renderWhitespace: "selection",
         bracketPairColorization: { enabled: true },
-        guides: { bracketPairs: true },
+        guides: { bracketPairs: true, indentation: true },
         cursorBlinking: "smooth",
+        cursorSmoothCaretAnimation: "on",
         fontLigatures: true,
         tabSize: 2
       }}
