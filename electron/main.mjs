@@ -42,6 +42,120 @@ function runCapture(executable, args, cwd) {
   });
 }
 
+function runCaptureWithTimeout(executable, args, cwd, timeoutMs = 30000) {
+  return new Promise((resolve) => {
+    const child = spawn(executable, args, {
+      cwd,
+      windowsHide: true,
+      env: process.env
+    });
+
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    let timer;
+
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(result);
+    };
+
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk) => { stdout += chunk; });
+    child.stderr?.on("data", (chunk) => { stderr += chunk; });
+
+    child.on("error", (error) => {
+      finish({ stdout, stderr: `${stderr}${errorMessage(error)}\n`, exitCode: 1, cwd, timedOut: false });
+    });
+
+    child.on("close", (code) => {
+      finish({ stdout, stderr, exitCode: code ?? 1, cwd, timedOut: false });
+    });
+
+    timer = setTimeout(() => {
+      try { child.kill(); } catch { /* process may already be gone */ }
+      finish({
+        stdout,
+        stderr: `${stderr}XENRA trace process exceeded ${timeoutMs} ms and was stopped.\n`,
+        exitCode: 124,
+        cwd,
+        timedOut: true
+      });
+    }, timeoutMs);
+  });
+}
+
+function pathIsInside(rootPath, candidatePath) {
+  const relative = path.relative(rootPath, candidatePath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+async function tracePythonFile(rootPathValue, targetPathValue) {
+  const rootPath = path.resolve(String(rootPathValue ?? ""));
+  const targetPath = path.resolve(String(targetPathValue ?? ""));
+
+  const rootStat = await fs.stat(rootPath);
+  if (!rootStat.isDirectory()) throw new Error("Project root is not a directory.");
+
+  const targetStat = await fs.stat(targetPath);
+  if (!targetStat.isFile()) throw new Error("Trace target is not a file.");
+  if (path.extname(targetPath).toLowerCase() !== ".py") {
+    throw new Error("The Python runtime adapter only accepts .py files.");
+  }
+  if (!pathIsInside(rootPath, targetPath)) {
+    throw new Error("Trace target must be inside the active project.");
+  }
+
+  const runner = path.join(__dirname, "runtime", "python_trace_runner.py");
+  const candidates = process.platform === "win32"
+    ? [
+        { executable: "python", prefix: [] },
+        { executable: "py", prefix: ["-3"] }
+      ]
+    : [
+        { executable: "python3", prefix: [] },
+        { executable: "python", prefix: [] }
+      ];
+
+  const failures = [];
+
+  for (const candidate of candidates) {
+    const result = await runCaptureWithTimeout(
+      candidate.executable,
+      [...candidate.prefix, runner, rootPath, targetPath],
+      rootPath,
+      30000
+    );
+
+    if (result.timedOut) {
+      throw new Error(result.stderr.trim() || "Python trace timed out.");
+    }
+
+    const payload = result.stdout.trim();
+    if (!payload) {
+      failures.push(`${candidate.executable}: ${result.stderr.trim() || "no trace output"}`);
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(payload);
+      if (parsed?.error && !parsed?.events) {
+        throw new Error(parsed.error);
+      }
+      return parsed;
+    } catch (error) {
+      failures.push(`${candidate.executable}: ${errorMessage(error)}`);
+    }
+  }
+
+  throw new Error(
+    `Unable to start the Python runtime adapter. ${failures.filter(Boolean).join(" | ")}`
+  );
+}
+
 const SEARCH_SKIP_DIRS = new Set([
   ".git",
   "node_modules",
@@ -264,6 +378,14 @@ function registerIpc() {
       return await searchProjectFiles(resolvedRoot, query);
     } catch (error) {
       throw new Error(`Search failed: ${errorMessage(error)}`);
+    }
+  });
+
+  ipcMain.handle("runtime:trace-python", async (_event, { rootPath, targetPath }) => {
+    try {
+      return await tracePythonFile(rootPath, targetPath);
+    } catch (error) {
+      throw new Error(`Python trace failed: ${errorMessage(error)}`);
     }
   });
 

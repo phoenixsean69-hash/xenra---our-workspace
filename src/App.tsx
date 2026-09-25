@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { BottomPanelTab, FileNode, OpenFile, SearchResult, SidebarView } from "./types";
+import type { RuntimeTraceEvent, RuntimeTraceResult } from "./runtime/types";
 import {
   chooseProjectFolder,
   closeWindow,
   executeCommand,
   readTextFile,
+  tracePython,
   writeTextFile
 } from "./services/backend";
 import { fileName, joinPath, languageFromPath } from "./lib/path";
@@ -53,6 +55,8 @@ export default function App() {
   const [status, setStatus] = useState("Ready");
   const [treeRevision, setTreeRevision] = useState(0);
   const [overlay, setOverlay] = useState<"about" | "shortcuts" | null>(null);
+  const [traceResult, setTraceResult] = useState<RuntimeTraceResult | null>(null);
+  const [traceRunning, setTraceRunning] = useState(false);
 
   const activeFile = useMemo(
     () => openFiles.find((file) => file.path === activePath) ?? null,
@@ -76,6 +80,7 @@ export default function App() {
       setOpenFiles([]);
       setActivePath(null);
       setActiveView("explorer");
+      setTraceResult(null);
       localStorage.setItem(LAST_PROJECT_KEY, selected);
       setStatus(`Opened ${fileName(selected)}`);
     } catch (error) {
@@ -264,6 +269,35 @@ export default function App() {
     }
   }, [activeFile, projectRoot, saveActive]);
 
+  const traceActive = useCallback(async () => {
+    if (!activeFile || !projectRoot) return;
+
+    if (!activeFile.path.toLowerCase().endsWith(".py")) {
+      setStatus("Execution tracing currently supports Python files");
+      return;
+    }
+
+    await saveActive();
+    setTraceRunning(true);
+    setBottomOpen(true);
+    setBottomTab("execution");
+    setStatus("Tracing Python execution...");
+
+    try {
+      const result = await tracePython(projectRoot, activeFile.path);
+      setTraceResult(result);
+      setStatus(
+        result.exitCode === 0
+          ? `Trace captured ${result.events.length} event${result.events.length === 1 ? "" : "s"}`
+          : `Trace completed with exit code ${result.exitCode}`
+      );
+    } catch (error) {
+      setStatus(`Trace failed: ${String(error)}`);
+    } finally {
+      setTraceRunning(false);
+    }
+  }, [activeFile, projectRoot, saveActive]);
+
   const showTerminal = useCallback((action?: "focus" | "clear") => {
     if (!projectRoot) {
       setStatus("Open a folder first");
@@ -357,6 +391,9 @@ export default function App() {
       case "run.current":
         void runActive();
         break;
+      case "run.trace":
+        void traceActive();
+        break;
       case "run.output":
         if (projectRoot) {
           setBottomOpen(true);
@@ -392,7 +429,8 @@ export default function App() {
     runActive,
     saveActive,
     saveAll,
-    showTerminal
+    showTerminal,
+    traceActive
   ]);
 
   useEffect(() => {
@@ -589,7 +627,7 @@ export default function App() {
             <aside className="explorer-panel empty-project-panel">
               <div className="explorer-heading">
                 <span>EXPLORER</span>
-                <button className="ellipsis-button" type="button" onClick={() => void openProject()} title="Open folder">•••</button>
+                <button className="ellipsis-button" type="button" onClick={() => void openProject()} title="Open folder">â€¢â€¢â€¢</button>
               </div>
               <div className="empty-project-content">
                 <span>No folder open</span>
@@ -630,6 +668,12 @@ export default function App() {
               cwd={terminalCwd}
               onCwdChange={setTerminalCwd}
               output={output}
+              traceResult={traceResult}
+              traceRunning={traceRunning}
+              onTraceAgain={() => void traceActive()}
+              onOpenTraceEvent={(event: RuntimeTraceEvent) => {
+                void openAbsolutePath(event.file, event.line, 1);
+              }}
               onClose={() => setBottomOpen(false)}
             />
           )}
@@ -641,14 +685,14 @@ export default function App() {
           <section className="overlay-dialog" onMouseDown={(event) => event.stopPropagation()}>
             <header>
               <span>{overlay === "about" ? "About XENRA" : "Keyboard Shortcuts"}</span>
-              <button type="button" onClick={() => setOverlay(null)}>×</button>
+              <button type="button" onClick={() => setOverlay(null)}>Ã—</button>
             </header>
 
             {overlay === "about" ? (
               <div className="about-body">
                 <strong>XENRA 0.1</strong>
-                <p>Desktop engineering workspace.</p>
-                <p>Electron · React · Monaco · xterm</p>
+                <p>Production-grade development and execution environment.</p>
+                <p>Electron Â· React Â· Monaco Â· xterm</p>
               </div>
             ) : (
               <div className="shortcut-table">

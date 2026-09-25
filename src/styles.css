@@ -1081,3 +1081,225 @@ button {
   min-width: 80px;
   text-align: center;
 }
+
+.execution-panel {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(360px, 1.2fr) minmax(280px, .8fr);
+  background: #111214;
+}
+
+.execution-list-column,
+.execution-detail {
+  min-width: 0;
+  min-height: 0;
+}
+
+.execution-list-column {
+  display: grid;
+  grid-template-rows: 30px minmax(0, 1fr);
+  border-right: 1px solid #2c2e34;
+}
+
+.execution-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px;
+  border-bottom: 1px solid #282a30;
+  color: #777f8d;
+  font-size: 10px;
+}
+
+.execution-summary button,
+.execution-empty button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #aeb5c0;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.execution-summary button:hover,
+.execution-empty button:hover {
+  color: #f2b705;
+}
+
+.execution-events {
+  min-height: 0;
+  overflow: auto;
+}
+
+.execution-event {
+  width: 100%;
+  height: 27px;
+  display: grid;
+  grid-template-columns: 40px minmax(100px, .8fr) minmax(150px, 1.2fr) 66px;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-bottom: 1px solid #1c1e22;
+  background: transparent;
+  padding: 0 9px;
+  color: #aeb5c0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.execution-event:hover {
+  background: #1a1c20;
+}
+
+.execution-event.selected {
+  background: #24262b;
+  color: #d3d7df;
+}
+
+.execution-kind {
+  color: #7b8391;
+  font: 9px/1 "Cascadia Mono", Consolas, monospace;
+}
+
+.kind-exception { color: #dc7474; }
+.kind-return { color: #a99b70; }
+
+.execution-function,
+.execution-location {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.execution-function {
+  font: 10px/1 "Cascadia Mono", Consolas, monospace;
+}
+
+.execution-location,
+.execution-time {
+  color: #727a88;
+  font: 9px/1 "Cascadia Mono", Consolas, monospace;
+}
+
+.execution-time { text-align: right; }
+
+.execution-detail {
+  overflow: auto;
+  padding: 8px 10px 12px;
+}
+
+.execution-detail-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid #282a30;
+}
+
+.execution-detail-heading strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #d0d5dd;
+  font: 11px/1.2 "Cascadia Mono", Consolas, monospace;
+}
+
+.execution-detail-heading span {
+  flex: 0 0 auto;
+  color: #737b89;
+  font: 9px/1.2 "Cascadia Mono", Consolas, monospace;
+}
+
+.runtime-values { padding-top: 5px; }
+
+.runtime-value-row {
+  min-height: 25px;
+  display: grid;
+  grid-template-columns: minmax(72px, .7fr) 70px minmax(120px, 1.5fr) auto;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #1e2025;
+  font: 9px/1.2 "Cascadia Mono", Consolas, monospace;
+}
+
+.runtime-value-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #c5cad3;
+}
+
+.runtime-value-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #777f8c;
+}
+
+.runtime-value-display {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #aeb4bf;
+}
+
+.runtime-value-id { color: #6c7380; }
+
+.execution-empty,
+.execution-no-values {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  color: #737b88;
+  font-size: 10px;
+}
+
+.execution-exception {
+  margin-top: 8px;
+  padding: 6px 0;
+  color: #d98080;
+  font: 10px/1.4 "Cascadia Mono", Consolas, monospace;
+}
+
+.execution-return-value {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 8px;
+  padding-top: 8px;
+  color: #737b88;
+  font-size: 10px;
+}
+
+.execution-return-value code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #b9b29a;
+}
+
+.execution-stdio {
+  margin-top: 10px;
+  color: #777f8c;
+  font-size: 10px;
+}
+
+.execution-stdio summary { cursor: pointer; }
+
+.execution-stdio pre {
+  max-height: 100px;
+  overflow: auto;
+  margin: 6px 0 0;
+  color: #aeb5c0;
+  white-space: pre-wrap;
+  font: 9px/1.4 "Cascadia Mono", Consolas, monospace;
+}
+
+.execution-stdio .execution-stderr { color: #ce7777; }
+
+@media (max-width: 1050px) {
+  .execution-panel { grid-template-columns: minmax(0, 1fr); }
+  .execution-detail { display: none; }
+}

@@ -25,6 +25,7 @@ export type MenuAction =
   | "go.nextEditor"
   | "go.previousEditor"
   | "run.current"
+  | "run.trace"
   | "run.output"
   | "terminal.toggle"
   | "terminal.clear"
@@ -88,8 +89,8 @@ export default function MenuBar({ onAction, hasProject, hasActiveFile, hasOpenFi
         { label: "Select All", action: "selection.all", shortcut: "Ctrl+A", disabled: !hasActiveFile },
         { label: "Select Line", action: "selection.line", disabled: !hasActiveFile },
         { separator: true, label: "" },
-        { label: "Add Cursor Above", action: "selection.cursorAbove", shortcut: "Ctrl+Alt+↑", disabled: !hasActiveFile },
-        { label: "Add Cursor Below", action: "selection.cursorBelow", shortcut: "Ctrl+Alt+↓", disabled: !hasActiveFile }
+        { label: "Add Cursor Above", action: "selection.cursorAbove", shortcut: "Ctrl+Alt+â†‘", disabled: !hasActiveFile },
+        { label: "Add Cursor Below", action: "selection.cursorBelow", shortcut: "Ctrl+Alt+â†“", disabled: !hasActiveFile }
       ]
     },
     {
@@ -116,6 +117,7 @@ export default function MenuBar({ onAction, hasProject, hasActiveFile, hasOpenFi
       name: "Run",
       items: [
         { label: "Run Current File", action: "run.current", shortcut: "F5", disabled: !hasActiveFile || !hasProject },
+        { label: "Trace Current File", action: "run.trace", disabled: !hasActiveFile || !hasProject },
         { label: "Show Output", action: "run.output", disabled: !hasProject }
       ]
     },

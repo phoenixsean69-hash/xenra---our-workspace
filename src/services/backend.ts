@@ -1,10 +1,12 @@
 import type { CommandResult, FileNode, SearchResult } from "../types";
+import type { RuntimeTraceResult } from "../runtime/types";
 
 function bridge() {
-  if (!window.university) {
+  const api = window.xenra ?? window.university;
+  if (!api) {
     throw new Error("Desktop bridge is unavailable. Start XENRA with npm run dev, not only Vite.");
   }
-  return window.university;
+  return api;
 }
 
 export function chooseProjectFolder(): Promise<string | null> {
@@ -49,6 +51,10 @@ export function searchProject(rootPath: string, query: string): Promise<SearchRe
 
 export function gitCommand(cwd: string, args: string[]): Promise<CommandResult> {
   return bridge().gitCommand(cwd, args);
+}
+
+export function tracePython(rootPath: string, targetPath: string): Promise<RuntimeTraceResult> {
+  return bridge().tracePython(rootPath, targetPath);
 }
 
 export function closeWindow(): Promise<void> {

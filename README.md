@@ -1,78 +1,100 @@
-# XENRA 0.1 — Electron Foundation
+# XENRA
 
-XENRA is a self-contained university coding workspace. Version 0.1 proves the desktop IDE foundation without VS Code, GitHub, Rust, or Cargo.
+**Write. Run. See. Experiment.**
 
-## What is already inside
+XENRA is a production-grade software development and execution environment. It combines a serious desktop development workflow with runtime observation tools that let developers inspect how software actually behaves while it runs.
 
-- Standalone Electron desktop shell
-- React + TypeScript interface
-- Monaco code editor with multi-file tabs
-- Internal project explorer
-- Create / rename / delete files and folders
-- Save with `Ctrl + S`
-- Internal command terminal powered by xterm.js
-- Run support for Python, JavaScript, TypeScript and PowerShell files
-- Output and Problems panels
-- Native folder picker
-- Secure preload bridge between the UI and Node/Electron system APIs
-- Sample project for testing
+Learning and university workflows are supported, but they are not the product ceiling.
 
-## Requirements
+## Product ground rules
 
-Only these are required for the workspace itself:
+- XENRA remains useful as a real engineering tool even when educational features are ignored.
+- Visible controls perform real actions; XENRA does not ship fake IDE interactions.
+- Runtime truth is preferred over decorative/static diagrams.
+- Memory, object, execution, causality and profiling views are built from actual runtime evidence.
+- Different programming paradigms get appropriate visualizations instead of being forced into one model.
+- XENRA stays self-contained from the user's perspective while using mature compilers, runtimes, debuggers and version-control technology underneath.
+- The UI stays compact and professional.
+- Gold is an accent, not the interface background.
 
-- Node.js 22+
-- npm
+## Current desktop foundation
 
-Rust and Cargo are **not** required.
+- Electron desktop shell
+- React + TypeScript workbench
+- Monaco editor
+- Multi-file tabs
+- Project explorer and file operations
+- Project-wide text search
+- Integrated xterm command terminal
+- Run/output workflow
+- Git status, branches, staging and commits
+- Native folder selection
+- Context-isolated Electron preload bridge
 
-Language projects may still require their own toolchains. For example, running Python requires Python, and compiling C++ will require a C++ compiler. Those are project-language toolchains, not XENRA dependencies.
+## Runtime Observation Kernel
 
-## Start on Windows
+XENRA's runtime layer is language-neutral at the UI/data-model level. Language-specific adapters feed real execution events into that model.
 
-Open PowerShell in this folder and run:
+### Python adapter — first implementation
 
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\check-system.ps1
-.\run-dev.ps1
-```
+`Run > Trace Current File` captures real Python execution information:
 
-The first launch installs npm dependencies, then starts the Vite renderer and Electron desktop shell.
+- function calls
+- executed source lines
+- returns
+- exceptions
+- call depth
+- local-variable snapshots
+- interpreter object identities
+- stdout/stderr
+- duration and exit code
 
-## First test
+The **Execution** panel presents these events as an ordered runtime timeline. Selecting an event opens the exact source location.
 
-1. Click **Open project folder**.
-2. Select the included `sample-project` folder.
-3. Open `hello.py`.
-4. Edit it and press `Ctrl + S`.
-5. Click **Run** if Python is installed, or use the internal Terminal.
+Object IDs such as `py:...` are explicitly treated as interpreter runtime identities. XENRA does not present them as guaranteed physical memory addresses.
+
+This is the foundation for later:
+
+- time-travel state replay
+- stack/heap visualization
+- object/OOP visualization
+- causality tracking
+- data-structure visualization
+- profiling
+- program autopsy
+- execution comparison
 
 ## Architecture
 
 ```text
 XENRA
 ├── electron/
-│   ├── main.mjs        Native desktop process + IPC handlers
-│   └── preload.cjs     Restricted renderer bridge
+│   ├── main.mjs
+│   ├── preload.cjs
+│   └── runtime/
+│       └── python_trace_runner.py
 ├── src/
-│   ├── components/     Workbench UI
-│   ├── services/       Desktop bridge client
-│   └── lib/            Editor/path helpers
-├── sample-project/
-└── dist/               Production renderer output after npm run build
+│   ├── components/
+│   ├── runtime/
+│   │   └── types.ts
+│   ├── services/
+│   └── lib/
+└── sample-project/
 ```
 
-The renderer has `nodeIntegration: false` and uses `contextIsolation: true`. File operations and command execution are exposed through a small preload API instead of giving the UI direct Node access.
+The renderer runs with `nodeIntegration: false`, `contextIsolation: true`, and a restricted preload API.
 
-## Deliberately not in 0.1 yet
+## Development
 
-- Branching/version-control engine
-- Collaboration server
-- Assignment/submission workflows
-- Authorship/paste provenance
-- Full PTY terminal sessions
-- Debugger
-- Build profiles
+```powershell
+npm install
+npm run dev
+```
 
-Those will be added on top of this foundation rather than faked in the first release.
+Production renderer verification:
+
+```powershell
+npm run build
+```
+
+Language toolchains remain external system dependencies where appropriate. Python tracing requires an installed Python interpreter; C/C++ development will use a real compiler/debugger toolchain rather than a XENRA reimplementation.
