@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,58 +43,222 @@ function runCapture(executable, args, cwd) {
   });
 }
 
-function runCaptureWithTimeout(executable, args, cwd, timeoutMs = 30000) {
-  return new Promise((resolve) => {
-    const child = spawn(executable, args, {
-      cwd,
-      windowsHide: true,
-      env: process.env
-    });
+const pythonTraceSessions = new Map();
+const traceCleanupSenders = new Set();
+const TRACE_EVENT_LIMIT = 5000;
 
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-    let timer;
-
-    const finish = (result) => {
-      if (settled) return;
-      settled = true;
-      if (timer) clearTimeout(timer);
-      resolve(result);
-    };
-
-    child.stdout?.setEncoding("utf8");
-    child.stderr?.setEncoding("utf8");
-    child.stdout?.on("data", (chunk) => { stdout += chunk; });
-    child.stderr?.on("data", (chunk) => { stderr += chunk; });
-
-    child.on("error", (error) => {
-      finish({ stdout, stderr: `${stderr}${errorMessage(error)}\n`, exitCode: 1, cwd, timedOut: false });
-    });
-
-    child.on("close", (code) => {
-      finish({ stdout, stderr, exitCode: code ?? 1, cwd, timedOut: false });
-    });
-
-    timer = setTimeout(() => {
-      try { child.kill(); } catch { /* process may already be gone */ }
-      finish({
-        stdout,
-        stderr: `${stderr}XENRA trace process exceeded ${timeoutMs} ms and was stopped.\n`,
-        exitCode: 124,
-        cwd,
-        timedOut: true
-      });
-    }, timeoutMs);
+function sendTraceMessage(session, message) {
+  if (!session?.sender || session.sender.isDestroyed()) return;
+  session.sender.send("runtime:python-trace-message", {
+    sessionId: session.id,
+    ...message
   });
 }
 
-function pathIsInside(rootPath, candidatePath) {
-  const relative = path.relative(rootPath, candidatePath);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+function consumeTraceProtocolLine(session, line) {
+  const trimmed = line.trim();
+  if (!trimmed) return;
+
+  try {
+    const message = JSON.parse(trimmed);
+
+    if (message.type === "limit") {
+      session.truncated = true;
+    }
+
+    if (message.type === "complete") {
+      session.runnerCompleted = true;
+      session.finished = true;
+      sendTraceMessage(session, message);
+      pythonTraceSessions.delete(session.id);
+      return;
+    }
+
+    sendTraceMessage(session, message);
+  } catch {
+    sendTraceMessage(session, {
+      type: "stderr",
+      chunk: `[XENRA trace protocol] ${line}\n`
+    });
+  }
 }
 
-async function tracePythonFile(rootPathValue, targetPathValue) {
+function finalizeTraceSession(session, {
+  exitCode = 1,
+  stopped = false,
+  error = undefined
+} = {}) {
+  if (!session || session.finished) return;
+
+  session.finished = true;
+  pythonTraceSessions.delete(session.id);
+
+  if (error) {
+    sendTraceMessage(session, { type: "error", message: error });
+  }
+
+  sendTraceMessage(session, {
+    type: "complete",
+    durationMs: Date.now() - session.startedEpochMs,
+    exitCode,
+    stopped,
+    truncated: Boolean(session.truncated),
+    eventLimit: TRACE_EVENT_LIMIT,
+    error
+  });
+}
+
+function startTraceCandidate(session, candidateIndex) {
+  if (!session || session.finished) return;
+
+  if (session.stopRequested) {
+    finalizeTraceSession(session, { exitCode: 130, stopped: true });
+    return;
+  }
+
+  const candidate = session.candidates[candidateIndex];
+  if (!candidate) {
+    finalizeTraceSession(session, {
+      exitCode: 1,
+      error: "No usable Python 3 interpreter was found on PATH."
+    });
+    return;
+  }
+
+  const runner = path.join(__dirname, "runtime", "python_trace_runner.py");
+  const child = spawn(
+    candidate.executable,
+    [...candidate.prefix, runner, session.rootPath, session.targetPath],
+    {
+      cwd: session.rootPath,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        XENRA_TRACE_MAX_EVENTS: String(TRACE_EVENT_LIMIT)
+      }
+    }
+  );
+
+  session.child = child;
+  session.spawned = false;
+
+  let stdoutBuffer = "";
+
+  child.once("spawn", () => {
+    if (session.child !== child || session.finished) return;
+    session.spawned = true;
+  });
+
+  child.stdout?.setEncoding("utf8");
+  child.stderr?.setEncoding("utf8");
+
+  child.stdout?.on("data", (chunk) => {
+    if (session.child !== child || session.finished) return;
+
+    stdoutBuffer += chunk;
+    while (true) {
+      const newline = stdoutBuffer.indexOf("\n");
+      if (newline < 0) break;
+
+      const line = stdoutBuffer.slice(0, newline);
+      stdoutBuffer = stdoutBuffer.slice(newline + 1);
+      consumeTraceProtocolLine(session, line);
+    }
+  });
+
+  child.stderr?.on("data", (chunk) => {
+    if (session.child !== child || session.finished) return;
+    sendTraceMessage(session, { type: "stderr", chunk });
+  });
+
+  child.on("error", (error) => {
+    if (session.child !== child || session.finished) return;
+
+    if (!session.spawned && error?.code === "ENOENT") {
+      session.child = null;
+      startTraceCandidate(session, candidateIndex + 1);
+      return;
+    }
+
+    finalizeTraceSession(session, {
+      exitCode: 1,
+      error: errorMessage(error)
+    });
+  });
+
+  child.on("close", (code, signal) => {
+    if (session.child !== child || session.finished) return;
+
+    if (stdoutBuffer.trim()) {
+      consumeTraceProtocolLine(session, stdoutBuffer);
+      stdoutBuffer = "";
+    }
+
+    if (session.runnerCompleted) return;
+
+    const stopped = session.stopRequested || signal === "SIGTERM" || signal === "SIGKILL";
+    finalizeTraceSession(session, {
+      exitCode: code ?? (stopped ? 130 : 1),
+      stopped,
+      error: stopped ? undefined : (code === 0 ? undefined : `Python trace process exited with code ${code ?? 1}.`)
+    });
+  });
+}
+
+function beginTraceSession(session) {
+  if (!session || session.finished || session.launchRequested) return false;
+  session.launchRequested = true;
+  startTraceCandidate(session, 0);
+  return true;
+}
+
+function stopTraceSession(session) {
+  if (!session || session.finished) return false;
+
+  session.stopRequested = true;
+  const child = session.child;
+
+  if (!child || child.killed) {
+    finalizeTraceSession(session, { exitCode: 130, stopped: true });
+    return true;
+  }
+
+  if (process.platform === "win32" && child.pid) {
+    const killer = spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+      windowsHide: true
+    });
+
+    killer.on("error", () => {
+      try { child.kill(); } catch { /* already stopped */ }
+    });
+
+    killer.on("close", (code) => {
+      if (code !== 0 && !session.finished) {
+        try { child.kill(); } catch { /* already stopped */ }
+      }
+    });
+  } else {
+    try { child.kill("SIGTERM"); } catch { /* already stopped */ }
+  }
+
+  setTimeout(() => {
+    if (!session.finished && session.child === child) {
+      try { child.kill("SIGKILL"); } catch { /* already stopped */ }
+    }
+  }, 1500);
+
+  return true;
+}
+
+function stopTraceSessionsForSender(senderId) {
+  for (const session of pythonTraceSessions.values()) {
+    if (session.senderId === senderId) {
+      stopTraceSession(session);
+    }
+  }
+}
+
+async function preparePythonTraceSession(sender, rootPathValue, targetPathValue) {
   const rootPath = path.resolve(String(rootPathValue ?? ""));
   const targetPath = path.resolve(String(targetPathValue ?? ""));
 
@@ -109,51 +274,48 @@ async function tracePythonFile(rootPathValue, targetPathValue) {
     throw new Error("Trace target must be inside the active project.");
   }
 
-  const runner = path.join(__dirname, "runtime", "python_trace_runner.py");
-  const candidates = process.platform === "win32"
-    ? [
-        { executable: "python", prefix: [] },
-        { executable: "py", prefix: ["-3"] }
-      ]
-    : [
-        { executable: "python3", prefix: [] },
-        { executable: "python", prefix: [] }
-      ];
+  stopTraceSessionsForSender(sender.id);
 
-  const failures = [];
+  const session = {
+    id: randomUUID(),
+    sender,
+    senderId: sender.id,
+    rootPath,
+    targetPath,
+    startedAt: new Date().toISOString(),
+    startedEpochMs: Date.now(),
+    child: null,
+    spawned: false,
+    runnerCompleted: false,
+    launchRequested: false,
+    stopRequested: false,
+    finished: false,
+    truncated: false,
+    candidates: process.platform === "win32"
+      ? [
+          { executable: "python", prefix: ["-u"] },
+          { executable: "py", prefix: ["-3", "-u"] }
+        ]
+      : [
+          { executable: "python3", prefix: ["-u"] },
+          { executable: "python", prefix: ["-u"] }
+        ]
+  };
 
-  for (const candidate of candidates) {
-    const result = await runCaptureWithTimeout(
-      candidate.executable,
-      [...candidate.prefix, runner, rootPath, targetPath],
-      rootPath,
-      30000
-    );
+  pythonTraceSessions.set(session.id, session);
 
-    if (result.timedOut) {
-      throw new Error(result.stderr.trim() || "Python trace timed out.");
-    }
+  return {
+    sessionId: session.id,
+    engine: "python",
+    targetPath,
+    startedAt: session.startedAt,
+    eventLimit: TRACE_EVENT_LIMIT
+  };
+}
 
-    const payload = result.stdout.trim();
-    if (!payload) {
-      failures.push(`${candidate.executable}: ${result.stderr.trim() || "no trace output"}`);
-      continue;
-    }
-
-    try {
-      const parsed = JSON.parse(payload);
-      if (parsed?.error && !parsed?.events) {
-        throw new Error(parsed.error);
-      }
-      return parsed;
-    } catch (error) {
-      failures.push(`${candidate.executable}: ${errorMessage(error)}`);
-    }
-  }
-
-  throw new Error(
-    `Unable to start the Python runtime adapter. ${failures.filter(Boolean).join(" | ")}`
-  );
+function pathIsInside(rootPath, candidatePath) {
+  const relative = path.relative(rootPath, candidatePath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 const SEARCH_SKIP_DIRS = new Set([
@@ -381,12 +543,33 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle("runtime:trace-python", async (_event, { rootPath, targetPath }) => {
+  ipcMain.handle("runtime:prepare-python-trace", async (event, { rootPath, targetPath }) => {
     try {
-      return await tracePythonFile(rootPath, targetPath);
+      const sender = event.sender;
+      const senderId = sender.id;
+
+      if (!traceCleanupSenders.has(senderId)) {
+        traceCleanupSenders.add(senderId);
+        sender.once("destroyed", () => {
+          traceCleanupSenders.delete(senderId);
+          stopTraceSessionsForSender(senderId);
+        });
+      }
+
+      return await preparePythonTraceSession(sender, rootPath, targetPath);
     } catch (error) {
       throw new Error(`Python trace failed: ${errorMessage(error)}`);
     }
+  });
+
+  ipcMain.handle("runtime:begin-python-trace", async (_event, { sessionId }) => {
+    const session = pythonTraceSessions.get(String(sessionId ?? ""));
+    return beginTraceSession(session);
+  });
+
+  ipcMain.handle("runtime:stop-python-trace", async (_event, { sessionId }) => {
+    const session = pythonTraceSessions.get(String(sessionId ?? ""));
+    return stopTraceSession(session);
   });
 
   ipcMain.handle("git:run", async (_event, { cwd, args }) => {

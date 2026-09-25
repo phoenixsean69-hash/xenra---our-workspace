@@ -1,5 +1,8 @@
 import type { CommandResult, FileNode, SearchResult } from "../types";
-import type { RuntimeTraceResult } from "../runtime/types";
+import type {
+  RuntimeTraceMessage,
+  RuntimeTraceSessionStart
+} from "../runtime/types";
 
 function bridge() {
   const api = window.xenra ?? window.university;
@@ -53,8 +56,20 @@ export function gitCommand(cwd: string, args: string[]): Promise<CommandResult> 
   return bridge().gitCommand(cwd, args);
 }
 
-export function tracePython(rootPath: string, targetPath: string): Promise<RuntimeTraceResult> {
-  return bridge().tracePython(rootPath, targetPath);
+export function preparePythonTrace(rootPath: string, targetPath: string): Promise<RuntimeTraceSessionStart> {
+  return bridge().preparePythonTrace(rootPath, targetPath);
+}
+
+export function beginPythonTrace(sessionId: string): Promise<boolean> {
+  return bridge().beginPythonTrace(sessionId);
+}
+
+export function stopPythonTrace(sessionId: string): Promise<boolean> {
+  return bridge().stopPythonTrace(sessionId);
+}
+
+export function onPythonTraceMessage(callback: (message: RuntimeTraceMessage) => void): () => void {
+  return bridge().onPythonTraceMessage(callback);
 }
 
 export function closeWindow(): Promise<void> {

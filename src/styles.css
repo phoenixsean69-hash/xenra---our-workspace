@@ -1303,3 +1303,22 @@ button {
   .execution-panel { grid-template-columns: minmax(0, 1fr); }
   .execution-detail { display: none; }
 }
+.execution-live-label {
+  color: #c2a64b;
+  font: 9px/1 "Cascadia Mono", Consolas, monospace;
+  letter-spacing: .5px;
+}
+
+.execution-summary .execution-stop-action {
+  color: #c98a8a;
+}
+
+.execution-summary .execution-stop-action:hover {
+  color: #e3a0a0;
+}
+
+.execution-live-wait {
+  padding: 9px 10px;
+  color: #707784;
+  font: 10px/1.4 "Cascadia Mono", Consolas, monospace;
+}

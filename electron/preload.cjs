@@ -12,7 +12,17 @@ const xenraApi = {
   executeCommand: (cwd, command) => ipcRenderer.invoke("process:execute-command", { cwd, command }),
   searchProject: (rootPath, query) => ipcRenderer.invoke("workspace:search-project", { rootPath, query }),
   gitCommand: (cwd, args) => ipcRenderer.invoke("git:run", { cwd, args }),
-  tracePython: (rootPath, targetPath) => ipcRenderer.invoke("runtime:trace-python", { rootPath, targetPath }),
+  preparePythonTrace: (rootPath, targetPath) =>
+    ipcRenderer.invoke("runtime:prepare-python-trace", { rootPath, targetPath }),
+  beginPythonTrace: (sessionId) =>
+    ipcRenderer.invoke("runtime:begin-python-trace", { sessionId }),
+  stopPythonTrace: (sessionId) =>
+    ipcRenderer.invoke("runtime:stop-python-trace", { sessionId }),
+  onPythonTraceMessage: (callback) => {
+    const listener = (_event, message) => callback(message);
+    ipcRenderer.on("runtime:python-trace-message", listener);
+    return () => ipcRenderer.removeListener("runtime:python-trace-message", listener);
+  },
   closeWindow: () => ipcRenderer.invoke("app:close-window")
 };
 

@@ -1,5 +1,8 @@
 import type { CommandResult, FileNode, SearchResult } from "./types";
-import type { RuntimeTraceResult } from "./runtime/types";
+import type {
+  RuntimeTraceMessage,
+  RuntimeTraceSessionStart
+} from "./runtime/types";
 
 type XenraDesktopBridge = {
   chooseProjectFolder(): Promise<string | null>;
@@ -13,7 +16,10 @@ type XenraDesktopBridge = {
   executeCommand(cwd: string, command: string): Promise<CommandResult>;
   searchProject(rootPath: string, query: string): Promise<SearchResult[]>;
   gitCommand(cwd: string, args: string[]): Promise<CommandResult>;
-  tracePython(rootPath: string, targetPath: string): Promise<RuntimeTraceResult>;
+  preparePythonTrace(rootPath: string, targetPath: string): Promise<RuntimeTraceSessionStart>;
+  beginPythonTrace(sessionId: string): Promise<boolean>;
+  stopPythonTrace(sessionId: string): Promise<boolean>;
+  onPythonTraceMessage(callback: (message: RuntimeTraceMessage) => void): () => void;
   closeWindow(): Promise<void>;
 };
 

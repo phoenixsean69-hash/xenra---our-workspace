@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BottomPanelTab, FileNode, OpenFile, SearchResult, SidebarView } from "./types";
-import type { RuntimeTraceEvent, RuntimeTraceResult } from "./runtime/types";
+import type { RuntimeTraceEvent, RuntimeTraceMessage, RuntimeTraceResult } from "./runtime/types";
 import {
+  beginPythonTrace,
   chooseProjectFolder,
   closeWindow,
   executeCommand,
+  onPythonTraceMessage,
+  preparePythonTrace,
   readTextFile,
-  tracePython,
+  stopPythonTrace,
   writeTextFile
 } from "./services/backend";
 import { fileName, joinPath, languageFromPath } from "./lib/path";
@@ -57,7 +60,123 @@ export default function App() {
   const [overlay, setOverlay] = useState<"about" | "shortcuts" | null>(null);
   const [traceResult, setTraceResult] = useState<RuntimeTraceResult | null>(null);
   const [traceRunning, setTraceRunning] = useState(false);
+  const traceSessionRef = useRef<string | null>(null);
+  const traceQueueRef = useRef<RuntimeTraceMessage[]>([]);
+  const traceFlushTimerRef = useRef<number | null>(null);
 
+  useEffect(() => {
+    const flush = () => {
+      traceFlushTimerRef.current = null;
+      const messages = traceQueueRef.current.splice(0);
+      if (!messages.length) return;
+
+      let completed: Extract<RuntimeTraceMessage, { type: "complete" }> | null = null;
+      let traceError: string | null = null;
+
+      for (const message of messages) {
+        if (message.type === "complete") {
+          completed = message;
+        } else if (message.type === "error") {
+          traceError = message.message;
+        }
+      }
+
+      setTraceResult((current) => {
+        if (!current) return current;
+
+        let next: RuntimeTraceResult = current;
+        let eventsCopied = false;
+
+        const ensureCopy = () => {
+          if (next === current) next = { ...current };
+        };
+
+        for (const message of messages) {
+          if (message.sessionId !== current.sessionId) continue;
+
+          switch (message.type) {
+            case "meta":
+              ensureCopy();
+              next.pythonVersion = message.pythonVersion;
+              next.eventLimit = message.eventLimit;
+              break;
+            case "event":
+              ensureCopy();
+              if (!eventsCopied) {
+                next.events = [...current.events];
+                eventsCopied = true;
+              }
+              next.events.push(message.event);
+              break;
+            case "stdout":
+              ensureCopy();
+              next.stdout += message.chunk;
+              break;
+            case "stderr":
+              ensureCopy();
+              next.stderr += message.chunk;
+              break;
+            case "limit":
+              ensureCopy();
+              next.truncated = true;
+              next.eventLimit = message.eventLimit;
+              break;
+            case "error":
+              ensureCopy();
+              next.error = message.message;
+              next.stderr += `${message.message}\n`;
+              break;
+            case "complete":
+              ensureCopy();
+              next.running = false;
+              next.stopped = message.stopped;
+              next.durationMs = message.durationMs;
+              next.exitCode = message.exitCode;
+              next.truncated = message.truncated;
+              next.eventLimit = message.eventLimit;
+              if (message.pythonVersion) next.pythonVersion = message.pythonVersion;
+              if (message.error) next.error = message.error;
+              break;
+          }
+        }
+
+        return next;
+      });
+
+      if (traceError) {
+        setStatus(`Trace error: ${traceError}`);
+      }
+
+      if (completed) {
+        setTraceRunning(false);
+        traceSessionRef.current = null;
+        setStatus(
+          completed.stopped
+            ? "Trace stopped"
+            : completed.exitCode === 0
+              ? "Trace completed"
+              : `Trace completed with exit code ${completed.exitCode}`
+        );
+      }
+    };
+
+    const unsubscribe = onPythonTraceMessage((message) => {
+      const sessionId = traceSessionRef.current;
+      if (!sessionId || message.sessionId !== sessionId) return;
+
+      traceQueueRef.current.push(message);
+      if (traceFlushTimerRef.current === null) {
+        traceFlushTimerRef.current = window.setTimeout(flush, 40);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      if (traceFlushTimerRef.current !== null) {
+        window.clearTimeout(traceFlushTimerRef.current);
+      }
+    };
+  }, []);
   const activeFile = useMemo(
     () => openFiles.find((file) => file.path === activePath) ?? null,
     [openFiles, activePath]
@@ -74,6 +193,12 @@ export default function App() {
     try {
       const selected = await chooseProjectFolder();
       if (!selected) return;
+      const activeTrace = traceSessionRef.current;
+      if (activeTrace) {
+        await stopPythonTrace(activeTrace);
+        traceSessionRef.current = null;
+      }
+
       setProjectRoot(selected);
       setTerminalCwd(selected);
       setSelectedPath(selected);
@@ -269,6 +394,18 @@ export default function App() {
     }
   }, [activeFile, projectRoot, saveActive]);
 
+  const stopTrace = useCallback(async () => {
+    const sessionId = traceSessionRef.current;
+    if (!sessionId) return;
+
+    setStatus("Stopping trace...");
+    try {
+      await stopPythonTrace(sessionId);
+    } catch (error) {
+      setStatus(`Stop trace failed: ${String(error)}`);
+    }
+  }, []);
+
   const traceActive = useCallback(async () => {
     if (!activeFile || !projectRoot) return;
 
@@ -277,27 +414,52 @@ export default function App() {
       return;
     }
 
+    const previousSession = traceSessionRef.current;
+    if (previousSession) {
+      await stopPythonTrace(previousSession);
+      traceSessionRef.current = null;
+    }
+
     await saveActive();
     setTraceRunning(true);
+    setTraceResult(null);
     setBottomOpen(true);
     setBottomTab("execution");
-    setStatus("Tracing Python execution...");
+    setStatus("Preparing Python trace...");
 
     try {
-      const result = await tracePython(projectRoot, activeFile.path);
-      setTraceResult(result);
-      setStatus(
-        result.exitCode === 0
-          ? `Trace captured ${result.events.length} event${result.events.length === 1 ? "" : "s"}`
-          : `Trace completed with exit code ${result.exitCode}`
-      );
+      const session = await preparePythonTrace(projectRoot, activeFile.path);
+
+      traceSessionRef.current = session.sessionId;
+      setTraceResult({
+        sessionId: session.sessionId,
+        engine: "python",
+        targetPath: session.targetPath,
+        startedAt: session.startedAt,
+        durationMs: 0,
+        exitCode: null,
+        stdout: "",
+        stderr: "",
+        pythonVersion: "",
+        events: [],
+        truncated: false,
+        eventLimit: session.eventLimit,
+        running: true,
+        stopped: false
+      });
+
+      const started = await beginPythonTrace(session.sessionId);
+      if (!started) {
+        throw new Error("Trace session could not be started.");
+      }
+
+      setStatus("Python trace running");
     } catch (error) {
-      setStatus(`Trace failed: ${String(error)}`);
-    } finally {
       setTraceRunning(false);
+      traceSessionRef.current = null;
+      setStatus(`Trace failed: ${String(error)}`);
     }
   }, [activeFile, projectRoot, saveActive]);
-
   const showTerminal = useCallback((action?: "focus" | "clear") => {
     if (!projectRoot) {
       setStatus("Open a folder first");
@@ -394,6 +556,9 @@ export default function App() {
       case "run.trace":
         void traceActive();
         break;
+      case "run.stopTrace":
+        void stopTrace();
+        break;
       case "run.output":
         if (projectRoot) {
           setBottomOpen(true);
@@ -430,6 +595,7 @@ export default function App() {
     saveActive,
     saveAll,
     showTerminal,
+    stopTrace,
     traceActive
   ]);
 
@@ -544,6 +710,7 @@ export default function App() {
             hasProject={Boolean(projectRoot)}
             hasActiveFile={Boolean(activeFile)}
             hasOpenFiles={openFiles.length > 0}
+            traceRunning={traceRunning}
           />
         </div>
 
@@ -627,7 +794,7 @@ export default function App() {
             <aside className="explorer-panel empty-project-panel">
               <div className="explorer-heading">
                 <span>EXPLORER</span>
-                <button className="ellipsis-button" type="button" onClick={() => void openProject()} title="Open folder">â€¢â€¢â€¢</button>
+                <button className="ellipsis-button" type="button" onClick={() => void openProject()} title="Open folder">Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢</button>
               </div>
               <div className="empty-project-content">
                 <span>No folder open</span>
@@ -671,6 +838,7 @@ export default function App() {
               traceResult={traceResult}
               traceRunning={traceRunning}
               onTraceAgain={() => void traceActive()}
+              onStopTrace={() => void stopTrace()}
               onOpenTraceEvent={(event: RuntimeTraceEvent) => {
                 void openAbsolutePath(event.file, event.line, 1);
               }}
@@ -685,14 +853,14 @@ export default function App() {
           <section className="overlay-dialog" onMouseDown={(event) => event.stopPropagation()}>
             <header>
               <span>{overlay === "about" ? "About XENRA" : "Keyboard Shortcuts"}</span>
-              <button type="button" onClick={() => setOverlay(null)}>Ã—</button>
+              <button type="button" onClick={() => setOverlay(null)}>Ãƒâ€”</button>
             </header>
 
             {overlay === "about" ? (
               <div className="about-body">
                 <strong>XENRA 0.1</strong>
                 <p>Production-grade development and execution environment.</p>
-                <p>Electron Â· React Â· Monaco Â· xterm</p>
+                <p>Electron Ã‚Â· React Ã‚Â· Monaco Ã‚Â· xterm</p>
               </div>
             ) : (
               <div className="shortcut-table">

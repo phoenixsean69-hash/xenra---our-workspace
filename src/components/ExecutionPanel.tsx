@@ -5,6 +5,7 @@ type Props = {
   result: RuntimeTraceResult | null;
   running: boolean;
   onTraceAgain: () => void;
+  onStopTrace: () => void;
   onOpenEvent: (event: RuntimeTraceEvent) => void;
 };
 
@@ -15,43 +16,75 @@ const EVENT_LABEL: Record<RuntimeTraceEvent["kind"], string> = {
   exception: "EXC"
 };
 
-export default function ExecutionPanel({ result, running, onTraceAgain, onOpenEvent }: Props) {
+export default function ExecutionPanel({
+  result,
+  running,
+  onTraceAgain,
+  onStopTrace,
+  onOpenEvent
+}: Props) {
   const [selectedSequence, setSelectedSequence] = useState<number | null>(null);
 
   useEffect(() => {
-    setSelectedSequence(result?.events[0]?.sequence ?? null);
-  }, [result]);
+    if (!result?.events.length) {
+      setSelectedSequence(null);
+      return;
+    }
+
+    setSelectedSequence((current) => {
+      if (current && result.events.some((event) => event.sequence === current)) {
+        return current;
+      }
+      return result.events[0].sequence;
+    });
+  }, [result?.sessionId, result?.events.length]);
 
   const selected = useMemo(
     () => result?.events.find((event) => event.sequence === selectedSequence) ?? null,
     [result, selectedSequence]
   );
 
-  if (running) {
-    return <div className="execution-empty">Tracing current Python file…</div>;
-  }
-
   if (!result) {
     return (
       <div className="execution-empty">
-        <span>No execution trace.</span>
-        <button type="button" onClick={onTraceAgain}>Trace Current File</button>
+        <span>{running ? "Starting trace…" : "No execution trace."}</span>
+        {running ? (
+          <button type="button" onClick={onStopTrace}>Stop Trace</button>
+        ) : (
+          <button type="button" onClick={onTraceAgain}>Trace Current File</button>
+        )}
       </div>
     );
   }
+
+  const lastEvent = result.events[result.events.length - 1];
+  const elapsedMs = running ? (lastEvent?.timeMs ?? 0) : result.durationMs;
 
   return (
     <div className="execution-panel">
       <div className="execution-list-column">
         <div className="execution-summary">
+          {running && <span className="execution-live-label">LIVE</span>}
           <span>{result.events.length.toLocaleString()} events</span>
-          <span>{result.durationMs.toFixed(1)} ms</span>
-          <span>exit {result.exitCode}</span>
-          {result.truncated && <span>truncated at {result.eventLimit.toLocaleString()}</span>}
-          <button type="button" onClick={onTraceAgain}>Trace Again</button>
+          <span>{elapsedMs.toFixed(1)} ms</span>
+          {!running && <span>exit {result.exitCode ?? "—"}</span>}
+          {result.stopped && <span>stopped</span>}
+          {result.truncated && <span>limit {result.eventLimit.toLocaleString()}</span>}
+
+          {running ? (
+            <button className="execution-stop-action" type="button" onClick={onStopTrace}>
+              Stop Trace
+            </button>
+          ) : (
+            <button type="button" onClick={onTraceAgain}>Trace Again</button>
+          )}
         </div>
 
         <div className="execution-events" role="list">
+          {!result.events.length && running && (
+            <div className="execution-live-wait">Waiting for the first runtime event…</div>
+          )}
+
           {result.events.map((event) => (
             <button
               type="button"
@@ -127,7 +160,9 @@ export default function ExecutionPanel({ result, running, onTraceAgain, onOpenEv
             )}
           </>
         ) : (
-          <div className="execution-no-values">Select an execution event.</div>
+          <div className="execution-no-values">
+            {running ? "Trace is live. Select an event when one appears." : "Select an execution event."}
+          </div>
         )}
       </aside>
     </div>

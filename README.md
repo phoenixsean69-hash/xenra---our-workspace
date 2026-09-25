@@ -9,35 +9,23 @@ Learning and university workflows are supported, but they are not the product ce
 ## Product ground rules
 
 - XENRA remains useful as a real engineering tool even when educational features are ignored.
-- Visible controls perform real actions; XENRA does not ship fake IDE interactions.
+- Visible controls perform real actions.
 - Runtime truth is preferred over decorative/static diagrams.
 - Memory, object, execution, causality and profiling views are built from actual runtime evidence.
-- Different programming paradigms get appropriate visualizations instead of being forced into one model.
-- XENRA stays self-contained from the user's perspective while using mature compilers, runtimes, debuggers and version-control technology underneath.
+- Different programming paradigms get appropriate visualizations.
+- XENRA stays self-contained from the user's perspective while using mature runtimes, compilers, debuggers and version-control technology underneath.
 - The UI stays compact and professional.
 - Gold is an accent, not the interface background.
 
-## Current desktop foundation
-
-- Electron desktop shell
-- React + TypeScript workbench
-- Monaco editor
-- Multi-file tabs
-- Project explorer and file operations
-- Project-wide text search
-- Integrated xterm command terminal
-- Run/output workflow
-- Git status, branches, staging and commits
-- Native folder selection
-- Context-isolated Electron preload bridge
-
 ## Runtime Observation Kernel
 
-XENRA's runtime layer is language-neutral at the UI/data-model level. Language-specific adapters feed real execution events into that model.
+The runtime layer uses a language-neutral event model. Language adapters feed real runtime evidence into the same execution UI.
 
-### Python adapter — first implementation
+### Python live trace adapter
 
-`Run > Trace Current File` captures real Python execution information:
+`Run > Trace Current File` creates a managed live execution session.
+
+While the Python process is still running XENRA receives:
 
 - function calls
 - executed source lines
@@ -46,43 +34,40 @@ XENRA's runtime layer is language-neutral at the UI/data-model level. Language-s
 - call depth
 - local-variable snapshots
 - interpreter object identities
-- stdout/stderr
-- duration and exit code
+- stdout and stderr
 
-The **Execution** panel presents these events as an ordered runtime timeline. Selecting an event opens the exact source location.
+The Execution panel updates continuously. Long-running programs do not have to exit before events appear.
 
-Object IDs such as `py:...` are explicitly treated as interpreter runtime identities. XENRA does not present them as guaranteed physical memory addresses.
+`Stop Trace` terminates the active trace process. Closing the renderer also cleans up its trace session.
 
-This is the foundation for later:
+The trace event limit is 5,000 by default. Reaching the limit stops additional tracing but does not silently claim the user program has stopped.
 
-- time-travel state replay
+IDs such as `py:...` are interpreter runtime identities, not guaranteed physical memory addresses.
+
+This kernel is the foundation for:
+
+- execution playback
+- time-travel state reconstruction
 - stack/heap visualization
-- object/OOP visualization
+- OOP/object visualization
 - causality tracking
+- program autopsy
 - data-structure visualization
 - profiling
-- program autopsy
-- execution comparison
 
-## Architecture
+## Current desktop foundation
 
-```text
-XENRA
-├── electron/
-│   ├── main.mjs
-│   ├── preload.cjs
-│   └── runtime/
-│       └── python_trace_runner.py
-├── src/
-│   ├── components/
-│   ├── runtime/
-│   │   └── types.ts
-│   ├── services/
-│   └── lib/
-└── sample-project/
-```
-
-The renderer runs with `nodeIntegration: false`, `contextIsolation: true`, and a restricted preload API.
+- Electron desktop shell
+- React + TypeScript workbench
+- Monaco editor
+- Multi-file tabs
+- Project explorer and file operations
+- Project-wide search
+- Integrated xterm command terminal
+- Run/output workflow
+- Git status, branches, staging and commits
+- Live Python runtime tracing
+- Context-isolated Electron preload bridge
 
 ## Development
 
@@ -91,10 +76,8 @@ npm install
 npm run dev
 ```
 
-Production renderer verification:
+Verify the production renderer:
 
 ```powershell
 npm run build
 ```
-
-Language toolchains remain external system dependencies where appropriate. Python tracing requires an installed Python interpreter; C/C++ development will use a real compiler/debugger toolchain rather than a XENRA reimplementation.

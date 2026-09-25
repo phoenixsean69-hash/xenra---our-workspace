@@ -26,6 +26,7 @@ export type MenuAction =
   | "go.previousEditor"
   | "run.current"
   | "run.trace"
+  | "run.stopTrace"
   | "run.output"
   | "terminal.toggle"
   | "terminal.clear"
@@ -38,6 +39,7 @@ type Props = {
   hasProject: boolean;
   hasActiveFile: boolean;
   hasOpenFiles: boolean;
+  traceRunning: boolean;
 };
 
 type MenuItem = {
@@ -53,7 +55,7 @@ type MenuDefinition = {
   items: MenuItem[];
 };
 
-export default function MenuBar({ onAction, hasProject, hasActiveFile, hasOpenFiles }: Props) {
+export default function MenuBar({ onAction, hasProject, hasActiveFile, hasOpenFiles, traceRunning }: Props) {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const rootRef = useRef<HTMLElement | null>(null);
 
@@ -89,8 +91,8 @@ export default function MenuBar({ onAction, hasProject, hasActiveFile, hasOpenFi
         { label: "Select All", action: "selection.all", shortcut: "Ctrl+A", disabled: !hasActiveFile },
         { label: "Select Line", action: "selection.line", disabled: !hasActiveFile },
         { separator: true, label: "" },
-        { label: "Add Cursor Above", action: "selection.cursorAbove", shortcut: "Ctrl+Alt+â†‘", disabled: !hasActiveFile },
-        { label: "Add Cursor Below", action: "selection.cursorBelow", shortcut: "Ctrl+Alt+â†“", disabled: !hasActiveFile }
+        { label: "Add Cursor Above", action: "selection.cursorAbove", shortcut: "Ctrl+Alt+Ã¢â€ â€˜", disabled: !hasActiveFile },
+        { label: "Add Cursor Below", action: "selection.cursorBelow", shortcut: "Ctrl+Alt+Ã¢â€ â€œ", disabled: !hasActiveFile }
       ]
     },
     {
@@ -117,7 +119,8 @@ export default function MenuBar({ onAction, hasProject, hasActiveFile, hasOpenFi
       name: "Run",
       items: [
         { label: "Run Current File", action: "run.current", shortcut: "F5", disabled: !hasActiveFile || !hasProject },
-        { label: "Trace Current File", action: "run.trace", disabled: !hasActiveFile || !hasProject },
+        { label: "Trace Current File", action: "run.trace", disabled: !hasActiveFile || !hasProject || traceRunning },
+        { label: "Stop Trace", action: "run.stopTrace", disabled: !traceRunning },
         { label: "Show Output", action: "run.output", disabled: !hasProject }
       ]
     },
@@ -137,7 +140,7 @@ export default function MenuBar({ onAction, hasProject, hasActiveFile, hasOpenFi
         { label: "About XENRA", action: "help.about" }
       ]
     }
-  ], [hasActiveFile, hasOpenFiles, hasProject]);
+  ], [hasActiveFile, hasOpenFiles, hasProject, traceRunning]);
 
   useEffect(() => {
     const close = (event: PointerEvent) => {

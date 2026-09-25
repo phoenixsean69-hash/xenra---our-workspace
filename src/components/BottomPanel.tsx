@@ -12,6 +12,7 @@ type Props = {
   traceResult: RuntimeTraceResult | null;
   traceRunning: boolean;
   onTraceAgain: () => void;
+  onStopTrace: () => void;
   onOpenTraceEvent: (event: RuntimeTraceEvent) => void;
   onClose?: () => void;
 };
@@ -25,6 +26,7 @@ export default function BottomPanel({
   traceResult,
   traceRunning,
   onTraceAgain,
+  onStopTrace,
   onOpenTraceEvent,
   onClose
 }: Props) {
@@ -61,6 +63,7 @@ export default function BottomPanel({
             result={traceResult}
             running={traceRunning}
             onTraceAgain={onTraceAgain}
+            onStopTrace={onStopTrace}
             onOpenEvent={onOpenTraceEvent}
           />
         </div>

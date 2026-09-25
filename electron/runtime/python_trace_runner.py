@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import datetime as _datetime
 import inspect
 import io
@@ -18,24 +17,78 @@ EVENT_LIMIT = max(100, min(int(os.environ.get("XENRA_TRACE_MAX_EVENTS", "5000"))
 DISPLAY_LIMIT = 180
 LOCAL_LIMIT = 80
 
+PROTOCOL_OUT = sys.stdout
+RUNNER_FILE = os.path.realpath(__file__)
+
 if len(sys.argv) < 3:
-    print(json.dumps({"error": "Usage: python_trace_runner.py <project-root> <target-file>"}))
-    sys.exit(0)
+    PROTOCOL_OUT.write(json.dumps({"type": "error", "message": "Usage: python_trace_runner.py <project-root> <target-file>"}) + "\n")
+    PROTOCOL_OUT.flush()
+    sys.exit(2)
 
 PROJECT_ROOT = os.path.realpath(sys.argv[1])
 TARGET_FILE = os.path.realpath(sys.argv[2])
 
-_events: list[dict[str, Any]] = []
+_event_count = 0
 _frame_depth: dict[int, int] = {}
 _started_perf = time.perf_counter()
 _started_at = _datetime.datetime.now(_datetime.timezone.utc).isoformat()
 _truncated = False
+_limit_emitted = False
+
+_SKIP_DIRS = {
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "node_modules",
+    ".xenra-backups",
+}
+
+
+def _emit(payload: dict[str, Any]) -> None:
+    try:
+        PROTOCOL_OUT.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
+        PROTOCOL_OUT.flush()
+    except Exception:
+        pass
+
+
+class _ProtocolStream(io.TextIOBase):
+    def __init__(self, message_type: str) -> None:
+        self.message_type = message_type
+
+    @property
+    def encoding(self) -> str:
+        return "utf-8"
+
+    def writable(self) -> bool:
+        return True
+
+    def isatty(self) -> bool:
+        return False
+
+    def write(self, value: str) -> int:
+        text = str(value)
+        if text:
+            _emit({"type": self.message_type, "chunk": text})
+        return len(text)
+
+    def flush(self) -> None:
+        return None
 
 
 def _inside_project(filename: str) -> bool:
     try:
         resolved = os.path.realpath(filename)
-        return os.path.commonpath([PROJECT_ROOT, resolved]) == PROJECT_ROOT
+        if resolved == RUNNER_FILE:
+            return False
+
+        relative = os.path.relpath(resolved, PROJECT_ROOT)
+        if relative == os.pardir or relative.startswith(os.pardir + os.sep):
+            return False
+
+        parts = set(relative.split(os.sep))
+        return not bool(parts.intersection(_SKIP_DIRS))
     except (ValueError, OSError):
         return False
 
@@ -167,10 +220,13 @@ def _relative_file(filename: str) -> str:
 
 
 def _record(frame: Any, kind: str, arg: Any = None) -> None:
-    global _truncated
+    global _event_count, _truncated, _limit_emitted
 
-    if len(_events) >= EVENT_LIMIT:
+    if _event_count >= EVENT_LIMIT:
         _truncated = True
+        if not _limit_emitted:
+            _limit_emitted = True
+            _emit({"type": "limit", "truncated": True, "eventLimit": EVENT_LIMIT})
         sys.settrace(None)
         return
 
@@ -181,8 +237,9 @@ def _record(frame: Any, kind: str, arg: Any = None) -> None:
         parent_depth = _frame_depth.get(id(frame.f_back), -1) if frame.f_back else -1
         _frame_depth[frame_key] = parent_depth + 1
 
+    _event_count += 1
     event: dict[str, Any] = {
-        "sequence": len(_events) + 1,
+        "sequence": _event_count,
         "kind": kind,
         "timeMs": round((time.perf_counter() - _started_perf) * 1000.0, 3),
         "file": filename,
@@ -207,7 +264,7 @@ def _record(frame: Any, kind: str, arg: Any = None) -> None:
         except Exception:
             event["exception"] = {"type": "Exception", "message": "<unavailable>"}
 
-    _events.append(event)
+    _emit({"type": "event", "event": event})
 
 
 def _trace(frame: Any, event: str, arg: Any):
@@ -236,10 +293,15 @@ def _trace(frame: Any, event: str, arg: Any):
     return _trace
 
 
-stdout_buffer = io.StringIO()
-stderr_buffer = io.StringIO()
 exit_code = 0
 error_text: str | None = None
+
+_emit({
+    "type": "meta",
+    "pythonVersion": sys.version.split()[0],
+    "eventLimit": EVENT_LIMIT,
+    "startedAt": _started_at,
+})
 
 try:
     if not os.path.isfile(TARGET_FILE):
@@ -255,7 +317,15 @@ try:
 
     sys.path.insert(0, os.path.dirname(TARGET_FILE))
 
-    with contextlib.redirect_stdout(stdout_buffer), contextlib.redirect_stderr(stderr_buffer):
+    program_stdout = _ProtocolStream("stdout")
+    program_stderr = _ProtocolStream("stderr")
+
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    sys.stdout = program_stdout
+    sys.stderr = program_stderr
+
+    try:
         sys.settrace(_trace)
         try:
             runpy.run_path(TARGET_FILE, run_name="__main__")
@@ -266,30 +336,33 @@ try:
                 exit_code = 0
             else:
                 exit_code = 1
-                print(str(exc.code), file=sys.stderr)
+                program_stderr.write(str(exc.code) + "\n")
         except BaseException as exc:
             exit_code = 1
             error_text = f"{type(exc).__name__}: {exc}"
-            traceback.print_exc()
+            traceback.print_exc(file=program_stderr)
         finally:
             sys.settrace(None)
+    finally:
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+
+except BaseException as exc:
+    exit_code = 1
+    error_text = f"{type(exc).__name__}: {exc}"
+    _emit({"type": "error", "message": error_text})
+
 finally:
     duration_ms = round((time.perf_counter() - _started_perf) * 1000.0, 3)
-    result = {
-        "engine": "python",
-        "targetPath": TARGET_FILE,
-        "startedAt": _started_at,
+    payload: dict[str, Any] = {
+        "type": "complete",
         "durationMs": duration_ms,
         "exitCode": exit_code,
-        "stdout": stdout_buffer.getvalue(),
-        "stderr": stderr_buffer.getvalue(),
-        "pythonVersion": sys.version.split()[0],
-        "events": _events,
+        "stopped": False,
         "truncated": _truncated,
         "eventLimit": EVENT_LIMIT,
+        "pythonVersion": sys.version.split()[0],
     }
-
     if error_text:
-        result["error"] = error_text
-
-    print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+        payload["error"] = error_text
+    _emit(payload)
