@@ -1,8 +1,8 @@
-import type { CommandResult, FileNode, SearchResult } from "../types";
+import type { CommandResult, FileNode } from "../types";
 
 function bridge() {
   if (!window.university) {
-    throw new Error("Desktop bridge is unavailable. Start XENRA with npm run dev, not only Vite.");
+    throw new Error("Desktop bridge is unavailable. Start the app with npm run dev, not only vite.");
   }
   return window.university;
 }
@@ -41,16 +41,4 @@ export function deletePath(path: string): Promise<void> {
 
 export function executeCommand(cwd: string, command: string): Promise<CommandResult> {
   return bridge().executeCommand(cwd, command);
-}
-
-export function searchProject(rootPath: string, query: string): Promise<SearchResult[]> {
-  return bridge().searchProject(rootPath, query);
-}
-
-export function gitCommand(cwd: string, args: string[]): Promise<CommandResult> {
-  return bridge().gitCommand(cwd, args);
-}
-
-export function closeWindow(): Promise<void> {
-  return bridge().closeWindow();
 }

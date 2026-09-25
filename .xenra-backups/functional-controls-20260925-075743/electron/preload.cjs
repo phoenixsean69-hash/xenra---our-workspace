@@ -9,8 +9,5 @@ contextBridge.exposeInMainWorld("university", {
   createDirectory: (path) => ipcRenderer.invoke("fs:create-directory", path),
   renamePath: (path, newPath) => ipcRenderer.invoke("fs:rename-path", { path, newPath }),
   deletePath: (path) => ipcRenderer.invoke("fs:delete-path", path),
-  executeCommand: (cwd, command) => ipcRenderer.invoke("process:execute-command", { cwd, command }),
-  searchProject: (rootPath, query) => ipcRenderer.invoke("workspace:search-project", { rootPath, query }),
-  gitCommand: (cwd, args) => ipcRenderer.invoke("git:run", { cwd, args }),
-  closeWindow: () => ipcRenderer.invoke("app:close-window")
+  executeCommand: (cwd, command) => ipcRenderer.invoke("process:execute-command", { cwd, command })
 });

@@ -1,0 +1,18 @@
+﻿{
+    "existing":  [
+                     "src\\App.tsx",
+                     "src\\styles.css",
+                     "src\\types.ts",
+                     "src\\electron.d.ts",
+                     "src\\services\\backend.ts",
+                     "src\\components\\CodeEditor.tsx",
+                     "src\\components\\TerminalPanel.tsx",
+                     "electron\\main.mjs",
+                     "electron\\preload.cjs"
+                 ],
+    "missing":  [
+                    "src\\components\\MenuBar.tsx",
+                    "src\\components\\SearchPanel.tsx",
+                    "src\\components\\SourceControlPanel.tsx"
+                ]
+}

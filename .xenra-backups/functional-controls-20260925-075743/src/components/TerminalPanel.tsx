@@ -173,24 +173,5 @@ export default function TerminalPanel({ cwd, onCwdChange, visible }: Props) {
     });
   }, [visible]);
 
-  useEffect(() => {
-    const onTerminalAction = (event: Event) => {
-      const action = (event as CustomEvent<{ action: string }>).detail?.action;
-      if (!action) return;
-
-      if (action === "clear") {
-        terminalRef.current?.clear();
-        return;
-      }
-
-      if (action === "focus") {
-        requestAnimationFrame(() => terminalRef.current?.focus());
-      }
-    };
-
-    window.addEventListener("xenra:terminal-action", onTerminalAction);
-    return () => window.removeEventListener("xenra:terminal-action", onTerminalAction);
-  }, []);
-
   return <div ref={hostRef} className="terminal-host" />;
 }

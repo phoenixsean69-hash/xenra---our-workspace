@@ -85,69 +85,6 @@ export default function CodeEditor({ file, onChange, onSave }: Props) {
       onChange={(value) => onChange(value ?? "")}
       onMount={(editor) => {
         editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, onSave);
-
-        let minimapEnabled = true;
-
-        const onEditorAction = (event: Event) => {
-          const action = (event as CustomEvent<{ action: string; line?: number; column?: number }>).detail;
-          if (!action) return;
-
-          editor.focus();
-
-          switch (action.action) {
-            case "undo":
-              editor.trigger("xenra", "undo", null);
-              break;
-            case "redo":
-              editor.trigger("xenra", "redo", null);
-              break;
-            case "cut":
-              void editor.getAction("editor.action.clipboardCutAction")?.run();
-              break;
-            case "copy":
-              void editor.getAction("editor.action.clipboardCopyAction")?.run();
-              break;
-            case "paste":
-              void editor.getAction("editor.action.clipboardPasteAction")?.run();
-              break;
-            case "find":
-              void editor.getAction("actions.find")?.run();
-              break;
-            case "selectAll":
-              if (editor.getModel()) editor.setSelection(editor.getModel()!.getFullModelRange());
-              break;
-            case "selectLine":
-              void editor.getAction("expandLineSelection")?.run();
-              break;
-            case "cursorAbove":
-              void editor.getAction("editor.action.insertCursorAbove")?.run();
-              break;
-            case "cursorBelow":
-              void editor.getAction("editor.action.insertCursorBelow")?.run();
-              break;
-            case "goToLine":
-              void editor.getAction("editor.action.gotoLine")?.run();
-              break;
-            case "toggleMinimap":
-              minimapEnabled = !minimapEnabled;
-              editor.updateOptions({ minimap: { enabled: minimapEnabled } });
-              break;
-            case "reveal":
-              if (action.line) {
-                const line = Math.max(1, action.line);
-                const column = Math.max(1, action.column ?? 1);
-                editor.setPosition({ lineNumber: line, column });
-                editor.revealPositionInCenter({ lineNumber: line, column });
-              }
-              break;
-          }
-        };
-
-        window.addEventListener("xenra:editor-action", onEditorAction);
-        editor.onDidDispose(() => {
-          window.removeEventListener("xenra:editor-action", onEditorAction);
-        });
-
         editor.focus();
       }}
       options={{

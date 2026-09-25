@@ -483,48 +483,45 @@ button {
 
 .editor-tabs {
   min-width: 0;
-  height: 36px;
   display: flex;
-  align-items: stretch;
-  gap: 0;
+  align-items: center;
+  gap: 10px;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 0;
-  background: #18191d;
-  border-bottom: 1px solid #2d2f35;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-bottom: 0;
   scrollbar-width: thin;
 }
 
 .editor-tab {
   flex: 0 0 auto;
-  height: 35px;
-  min-width: 104px;
-  max-width: 210px;
+  height: 40px;
+  min-width: 96px;
+  max-width: 205px;
   display: flex;
   align-items: center;
-  gap: 7px;
-  border: 0;
-  border-right: 1px solid #2b2d33;
-  border-radius: 0;
-  background: #18191d;
-  padding: 0 9px 0 11px;
-  color: #8d94a1;
+  gap: 8px;
+  border: 2px solid #353740;
+  border-radius: 5px;
+  background: #1b1c20;
+  padding: 0 10px 0 13px;
+  color: #8f97a7;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
 }
 
 .editor-tab:hover {
-  background: #1d1f23;
-  color: #c2c7d0;
+  background: #202227;
+  color: #c5cbd5;
 }
 
 .editor-tab.active {
-  background: #111214;
-  color: #d6dae1;
-  border-top: 0;
-  border-bottom: 0;
-  box-shadow: none;
+  border-color: #3a3c45;
+  border-top-color: var(--gold);
+  background: #202126;
+  color: #d8dbe2;
 }
 
 .editor-tab > svg {
@@ -535,7 +532,7 @@ button {
 }
 
 .editor-tab.active > svg {
-  color: #b8bec8;
+  color: var(--gold-bright);
 }
 
 .editor-tab > span:nth-child(2) {
@@ -552,20 +549,18 @@ button {
 }
 
 .tab-close {
-  flex: 0 0 18px;
-  width: 18px;
-  height: 18px;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
   display: grid;
   place-items: center;
-  border-radius: 2px;
-  color: #6e7582;
-  opacity: .75;
+  border-radius: 4px;
+  color: #71798a;
 }
 
 .tab-close:hover {
-  background: #2a2c31;
-  color: #dfe3e9;
-  opacity: 1;
+  background: #34363e;
+  color: #e3e7ed;
 }
 
 .tab-close svg {

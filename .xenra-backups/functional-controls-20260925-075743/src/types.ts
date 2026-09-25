@@ -19,13 +19,4 @@ export type CommandResult = {
   cwd: string;
 };
 
-export type SearchResult = {
-  path: string;
-  relativePath: string;
-  line: number;
-  column: number;
-  preview: string;
-};
-
 export type BottomPanelTab = "terminal" | "output" | "problems";
-export type SidebarView = "explorer" | "search" | "source";

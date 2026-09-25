@@ -1,4 +1,4 @@
-import type { CommandResult, FileNode, SearchResult } from "./types";
+import type { CommandResult, FileNode } from "./types";
 
 declare global {
   interface Window {
@@ -12,9 +12,6 @@ declare global {
       renamePath(path: string, newPath: string): Promise<void>;
       deletePath(path: string): Promise<void>;
       executeCommand(cwd: string, command: string): Promise<CommandResult>;
-      searchProject(rootPath: string, query: string): Promise<SearchResult[]>;
-      gitCommand(cwd: string, args: string[]): Promise<CommandResult>;
-      closeWindow(): Promise<void>;
     };
   }
 }
