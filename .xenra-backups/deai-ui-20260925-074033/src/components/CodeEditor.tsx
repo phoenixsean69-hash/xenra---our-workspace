@@ -27,7 +27,14 @@ type Props = {
 
 export default function CodeEditor({ file, onChange, onSave }: Props) {
   if (!file) {
-    return <div className="empty-editor" aria-label="No file open" />;
+    return (
+      <div className="empty-editor">
+        <div className="empty-mark">Xe</div>
+        <h2>XENRA</h2>
+        <p>Open a folder, then choose a file from the explorer.</p>
+        <div className="shortcut-hint"><kbd>Ctrl</kbd><span>+</span><kbd>`</kbd><span>Toggle terminal</span></div>
+      </div>
+    );
   }
 
   return (

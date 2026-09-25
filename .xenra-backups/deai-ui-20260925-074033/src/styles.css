@@ -81,12 +81,19 @@ button {
   gap: 6px;
 }
 
-.app-wordmark {
-  flex: 0 0 auto;
-  color: #d7dbe3;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: .25px;
+.brand-mark {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #6b5717;
+  border-radius: 6px;
+  background: #201c0f;
+  color: var(--gold-bright);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .2px;
 }
 
 .menu-strip {
@@ -158,7 +165,9 @@ button {
   color: #d8dde6;
 }
 
-
+.run-chrome-action {
+  color: var(--gold-bright);
+}
 
 .chrome-action:disabled {
   opacity: .28;
@@ -229,7 +238,7 @@ button {
 }
 
 .activity-bar button.active svg {
-  filter: none;
+  filter: drop-shadow(0 0 5px rgba(242, 183, 5, .12));
 }
 
 .activity-bar button.muted {
@@ -251,7 +260,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 0 12px;
+  padding: 0 14px 0 16px;
 }
 
 .explorer-title,
@@ -261,9 +270,8 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #d0d5df;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: .45px;
 }
 
 .panel-actions {
@@ -286,16 +294,16 @@ button {
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 0;
+  border-radius: 5px;
   background: transparent;
-  color: #7e8593;
+  color: #8b93a3;
   cursor: pointer;
 }
 
 .panel-actions button:hover:not(:disabled),
 .ellipsis-button:hover {
-  background: transparent;
-  color: #d3d7df;
+  background: #292b31;
+  color: #e0e4eb;
 }
 
 .panel-actions button:disabled {
@@ -389,28 +397,32 @@ button {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 7px;
-  padding: 10px 12px;
-  color: #777e8b;
-  font-size: 11px;
+  gap: 12px;
+  padding: 14px 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.empty-project-content p {
+  margin: 0;
 }
 
 .empty-project-content button {
-  height: auto;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  padding: 0;
-  color: #b8bec9;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #6b5717;
+  border-radius: 6px;
+  background: #27210f;
+  padding: 0 11px;
+  color: #f0d66f;
   cursor: pointer;
-  font-size: 11px;
-  text-decoration: none;
 }
 
 .empty-project-content button:hover {
-  color: #f2b705;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  background: #332a0f;
+  border-color: #917318;
 }
 
 .main-column {
@@ -443,7 +455,7 @@ button {
   align-items: center;
   gap: 8px;
   border: 2px solid #353740;
-  border-radius: 5px;
+  border-radius: 8px;
   background: #1b1c20;
   padding: 0 10px 0 13px;
   color: #8f97a7;
@@ -458,10 +470,9 @@ button {
 }
 
 .editor-tab.active {
-  border-color: #3a3c45;
-  border-top-color: var(--gold);
-  background: #202126;
-  color: #d8dbe2;
+  border-color: #62521d;
+  background: #25251f;
+  color: #d8d8cf;
 }
 
 .editor-tab > svg {
@@ -518,7 +529,58 @@ button {
 .empty-editor {
   position: absolute;
   inset: 0;
-  background: #111214;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 50% 44%, rgba(242, 183, 5, .04), transparent 24%),
+    var(--bg);
+  color: #6d7482;
+}
+
+.empty-mark {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 15px;
+  border: 1px solid #554617;
+  border-radius: 10px;
+  background: #1b190f;
+  color: #a9891f;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.empty-editor h2 {
+  margin: 0 0 7px;
+  color: #9299a7;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.empty-editor p {
+  margin: 0 0 15px;
+  color: #6f7684;
+  font-size: 12px;
+}
+
+.shortcut-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #686f7d;
+  font-size: 11px;
+}
+
+kbd {
+  border: 1px solid #34363e;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: #1a1b1f;
+  padding: 2px 6px;
+  color: #9097a5;
 }
 
 .bottom-panel {
@@ -615,7 +677,18 @@ button {
   font-size: 12px;
 }
 
+.placeholder-terminal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 7px 16px;
+  color: #b6bdc9;
+  font: 12px/1.5 "Cascadia Mono", Consolas, monospace;
+}
 
+.terminal-muted {
+  color: #727987;
+}
 
 ::-webkit-scrollbar {
   width: 10px;

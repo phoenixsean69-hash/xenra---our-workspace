@@ -25,7 +25,7 @@ export default function App() {
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [bottomTab, setBottomTab] = useState<BottomPanelTab>("terminal");
-  const [bottomOpen, setBottomOpen] = useState(false);
+  const [bottomOpen, setBottomOpen] = useState(true);
   const [terminalCwd, setTerminalCwd] = useState("");
   const [output, setOutput] = useState("");
   const [status, setStatus] = useState("Ready");
@@ -52,6 +52,7 @@ export default function App() {
       setSelectedPath(selected);
       setOpenFiles([]);
       setActivePath(null);
+      setBottomOpen(true);
       localStorage.setItem(LAST_PROJECT_KEY, selected);
       setStatus(`Opened ${fileName(selected)}`);
     } catch (error) {
@@ -214,7 +215,7 @@ export default function App() {
     <div className="app-shell">
       <header className="titlebar">
         <div className="title-left">
-          <span className="app-wordmark">XENRA</span>
+          <div className="brand-mark">Xe</div>
           <nav className="menu-strip" aria-label="Application menu">
             <button type="button">File</button>
             <button type="button">Edit</button>
@@ -230,10 +231,14 @@ export default function App() {
         <div className="window-title" title={windowTitle}>{windowTitle}</div>
 
         <div className="title-actions">
+          <span className="title-status" title={status}>{status}</span>
+          <button className="chrome-action" type="button" onClick={openProject} title="Open project folder">
+            <FolderOpenIcon />
+          </button>
           <button className="chrome-action" type="button" onClick={saveActive} disabled={!activeFile} title="Save current file">
             <SaveIcon />
           </button>
-          <button className="chrome-action" type="button" onClick={runActive} disabled={!activeFile} title="Run current file">
+          <button className="chrome-action run-chrome-action" type="button" onClick={runActive} disabled={!activeFile} title="Run current file">
             <PlayIcon />
           </button>
         </div>
@@ -272,12 +277,12 @@ export default function App() {
         ) : (
           <aside className="explorer-panel empty-project-panel">
             <div className="explorer-heading">
-              <span>EXPLORER</span>
-              <button className="ellipsis-button" type="button" onClick={openProject} title="Open folder">•••</button>
+              <span>XENRA</span>
+              <button className="ellipsis-button" type="button" onClick={openProject} title="Open project folder">•••</button>
             </div>
             <div className="empty-project-content">
-              <span>No folder open</span>
-              <button type="button" onClick={openProject}>Open Folder...</button>
+              <p>No folder opened</p>
+              <button type="button" onClick={openProject}><FolderOpenIcon /> Open Folder</button>
             </div>
           </aside>
         )}
@@ -294,8 +299,9 @@ export default function App() {
             <CodeEditor file={activeFile} onChange={changeActiveContent} onSave={saveActive} />
           </div>
 
-          {bottomOpen && projectRoot && (
-            <BottomPanel
+          {bottomOpen && (
+            projectRoot ? (
+              <BottomPanel
                 activeTab={bottomTab}
                 onTabChange={setBottomTab}
                 cwd={terminalCwd}
@@ -303,6 +309,19 @@ export default function App() {
                 output={output}
                 onClose={() => setBottomOpen(false)}
               />
+            ) : (
+              <section className="bottom-panel placeholder-terminal">
+                <div className="bottom-tabs">
+                  <button className="active" type="button">TERMINAL</button>
+                  <button type="button">OUTPUT</button>
+                  <button className="panel-close-button" type="button" onClick={() => setBottomOpen(false)}>×</button>
+                </div>
+                <div className="placeholder-terminal-body">
+                  <span>XENRA Terminal</span>
+                  <span className="terminal-muted">Open a project folder to start a terminal session.</span>
+                </div>
+              </section>
+            )
           )}
         </section>
       </div>
