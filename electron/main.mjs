@@ -43,6 +43,150 @@ function runCapture(executable, args, cwd) {
   });
 }
 
+const TOOLCHAIN_PROBES = [
+  {
+    id: "python",
+    label: "Python",
+    candidates: process.platform === "win32"
+      ? [
+          { executable: "python", versionArgs: ["--version"], prefixArgs: [] },
+          { executable: "py", versionArgs: ["-3", "--version"], prefixArgs: ["-3"] }
+        ]
+      : [
+          { executable: "python3", versionArgs: ["--version"], prefixArgs: [] },
+          { executable: "python", versionArgs: ["--version"], prefixArgs: [] }
+        ]
+  },
+  { id: "node", label: "Node.js", candidates: [{ executable: "node", versionArgs: ["--version"] }] },
+  { id: "tsx", label: "tsx", candidates: [{ executable: "tsx", versionArgs: ["--version"] }] },
+  { id: "ts-node", label: "ts-node", candidates: [{ executable: "ts-node", versionArgs: ["--version"] }] },
+  { id: "tsc", label: "TypeScript Compiler", candidates: [{ executable: "tsc", versionArgs: ["--version"] }] },
+  { id: "gcc", label: "GCC (C)", candidates: [{ executable: "gcc", versionArgs: ["--version"] }] },
+  { id: "g++", label: "G++ (C++)", candidates: [{ executable: "g++", versionArgs: ["--version"] }] },
+  { id: "clang", label: "Clang (C)", candidates: [{ executable: "clang", versionArgs: ["--version"] }] },
+  { id: "clang++", label: "Clang++ (C++)", candidates: [{ executable: "clang++", versionArgs: ["--version"] }] },
+  { id: "javac", label: "Java Compiler", candidates: [{ executable: "javac", versionArgs: ["-version"] }] },
+  { id: "java", label: "Java Runtime", candidates: [{ executable: "java", versionArgs: ["-version"] }] },
+  { id: "dotnet", label: ".NET SDK", candidates: [{ executable: "dotnet", versionArgs: ["--version"] }] },
+  { id: "csc", label: "C# Compiler", candidates: [{ executable: "csc", versionArgs: ["-version"] }] },
+  { id: "go", label: "Go", candidates: [{ executable: "go", versionArgs: ["version"] }] },
+  { id: "rustc", label: "Rust Compiler", candidates: [{ executable: "rustc", versionArgs: ["--version"] }] },
+  { id: "cargo", label: "Cargo", candidates: [{ executable: "cargo", versionArgs: ["--version"] }] },
+  { id: "php", label: "PHP", candidates: [{ executable: "php", versionArgs: ["--version"] }] },
+  { id: "ruby", label: "Ruby", candidates: [{ executable: "ruby", versionArgs: ["--version"] }] },
+  {
+    id: "powershell",
+    label: "PowerShell",
+    candidates: process.platform === "win32"
+      ? [
+          { executable: "pwsh", versionArgs: ["-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"] },
+          { executable: "powershell", versionArgs: ["-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"] }
+        ]
+      : [
+          { executable: "pwsh", versionArgs: ["-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"] }
+        ]
+  },
+  { id: "bash", label: "Bash", candidates: [{ executable: "bash", versionArgs: ["--version"] }] },
+  { id: "nasm", label: "NASM", candidates: [{ executable: "nasm", versionArgs: ["-v"] }] },
+  { id: "as", label: "GNU Assembler", candidates: [{ executable: "as", versionArgs: ["--version"] }] }
+];
+
+function firstVersionLine(stdout, stderr) {
+  return (`${stdout}\n${stderr}`)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean)
+    ?.slice(0, 180) || "detected";
+}
+
+function probeExecutable(executable, args, cwd, timeoutMs = 2500) {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    let child;
+
+    try {
+      child = spawn(executable, args, {
+        cwd,
+        windowsHide: true,
+        env: process.env
+      });
+    } catch (error) {
+      resolve({ available: false, stdout, stderr: errorMessage(error) });
+      return;
+    }
+
+    let timer;
+
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(value);
+    };
+
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk) => { stdout += chunk; });
+    child.stderr?.on("data", (chunk) => { stderr += chunk; });
+
+    child.on("error", (error) => {
+      finish({ available: false, stdout, stderr: errorMessage(error) });
+    });
+
+    child.on("close", (code) => {
+      finish({ available: code === 0, stdout, stderr, exitCode: code ?? 1 });
+    });
+
+    timer = setTimeout(() => {
+      try { child.kill(); } catch { /* already gone */ }
+      finish({ available: false, stdout, stderr: "probe timed out" });
+    }, timeoutMs);
+  });
+}
+
+async function probeToolchain(definition, cwd) {
+  let lastError = "not found";
+
+  for (const candidate of definition.candidates) {
+    const probe = await probeExecutable(candidate.executable, candidate.versionArgs ?? [], cwd);
+
+    if (probe.available) {
+      return {
+        id: definition.id,
+        label: definition.label,
+        available: true,
+        command: candidate.executable,
+        prefixArgs: candidate.prefixArgs ?? [],
+        version: firstVersionLine(probe.stdout, probe.stderr)
+      };
+    }
+
+    lastError = firstVersionLine(probe.stdout, probe.stderr);
+  }
+
+  return {
+    id: definition.id,
+    label: definition.label,
+    available: false,
+    error: lastError
+  };
+}
+
+async function detectToolchains(cwdValue) {
+  const cwd = path.resolve(String(cwdValue || process.cwd()));
+  const tools = await Promise.all(
+    TOOLCHAIN_PROBES.map((definition) => probeToolchain(definition, cwd))
+  );
+
+  return {
+    platform: process.platform,
+    detectedAt: new Date().toISOString(),
+    tools
+  };
+}
+
 const pythonTraceSessions = new Map();
 const traceCleanupSenders = new Set();
 const TRACE_EVENT_LIMIT = 5000;
@@ -570,6 +714,14 @@ function registerIpc() {
   ipcMain.handle("runtime:stop-python-trace", async (_event, { sessionId }) => {
     const session = pythonTraceSessions.get(String(sessionId ?? ""));
     return stopTraceSession(session);
+  });
+
+  ipcMain.handle("language:detect-toolchains", async (_event, { cwd }) => {
+    try {
+      return await detectToolchains(cwd);
+    } catch (error) {
+      throw new Error(`Toolchain detection failed: ${errorMessage(error)}`);
+    }
   });
 
   ipcMain.handle("git:run", async (_event, { cwd, args }) => {

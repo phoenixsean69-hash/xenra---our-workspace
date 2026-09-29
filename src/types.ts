@@ -27,5 +27,5 @@ export type SearchResult = {
   preview: string;
 };
 
-export type BottomPanelTab = "terminal" | "output" | "problems" | "execution";
+export type BottomPanelTab = "terminal" | "output" | "problems" | "execution" | "toolchains";
 export type SidebarView = "explorer" | "search" | "source";

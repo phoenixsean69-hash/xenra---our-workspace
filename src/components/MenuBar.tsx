@@ -25,8 +25,10 @@ export type MenuAction =
   | "go.nextEditor"
   | "go.previousEditor"
   | "run.current"
+  | "run.build"
   | "run.trace"
   | "run.stopTrace"
+  | "run.toolchains"
   | "run.output"
   | "terminal.toggle"
   | "terminal.clear"
@@ -91,8 +93,8 @@ export default function MenuBar({ onAction, hasProject, hasActiveFile, hasOpenFi
         { label: "Select All", action: "selection.all", shortcut: "Ctrl+A", disabled: !hasActiveFile },
         { label: "Select Line", action: "selection.line", disabled: !hasActiveFile },
         { separator: true, label: "" },
-        { label: "Add Cursor Above", action: "selection.cursorAbove", shortcut: "Ctrl+Alt+Ã¢â€ â€˜", disabled: !hasActiveFile },
-        { label: "Add Cursor Below", action: "selection.cursorBelow", shortcut: "Ctrl+Alt+Ã¢â€ â€œ", disabled: !hasActiveFile }
+        { label: "Add Cursor Above", action: "selection.cursorAbove", shortcut: "Ctrl+Alt+ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Ëœ", disabled: !hasActiveFile },
+        { label: "Add Cursor Below", action: "selection.cursorBelow", shortcut: "Ctrl+Alt+ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Å“", disabled: !hasActiveFile }
       ]
     },
     {
@@ -119,8 +121,12 @@ export default function MenuBar({ onAction, hasProject, hasActiveFile, hasOpenFi
       name: "Run",
       items: [
         { label: "Run Current File", action: "run.current", shortcut: "F5", disabled: !hasActiveFile || !hasProject },
+        { label: "Build Current File", action: "run.build", shortcut: "Ctrl+Shift+B", disabled: !hasActiveFile || !hasProject },
+        { separator: true, label: "" },
         { label: "Trace Current File", action: "run.trace", disabled: !hasActiveFile || !hasProject || traceRunning },
         { label: "Stop Trace", action: "run.stopTrace", disabled: !traceRunning },
+        { separator: true, label: "" },
+        { label: "Toolchains...", action: "run.toolchains", disabled: !hasProject },
         { label: "Show Output", action: "run.output", disabled: !hasProject }
       ]
     },

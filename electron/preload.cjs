@@ -12,6 +12,7 @@ const xenraApi = {
   executeCommand: (cwd, command) => ipcRenderer.invoke("process:execute-command", { cwd, command }),
   searchProject: (rootPath, query) => ipcRenderer.invoke("workspace:search-project", { rootPath, query }),
   gitCommand: (cwd, args) => ipcRenderer.invoke("git:run", { cwd, args }),
+  detectToolchains: (cwd) => ipcRenderer.invoke("language:detect-toolchains", { cwd }),
   preparePythonTrace: (rootPath, targetPath) =>
     ipcRenderer.invoke("runtime:prepare-python-trace", { rootPath, targetPath }),
   beginPythonTrace: (sessionId) =>

@@ -1,8 +1,10 @@
 import type { BottomPanelTab } from "../types";
 import type { RuntimeTraceEvent, RuntimeTraceResult } from "../runtime/types";
+import type { ToolchainReport } from "../languages/types";
 import ExecutionPanel from "./ExecutionPanel";
 import { CloseIcon } from "./Icons";
 import ResizeHandle from "./ResizeHandle";
+import ToolchainsPanel from "./ToolchainsPanel";
 import TerminalPanel from "./TerminalPanel";
 
 type Props = {
@@ -11,6 +13,9 @@ type Props = {
   cwd: string;
   onCwdChange: (cwd: string) => void;
   output: string;
+  toolchains: ToolchainReport | null;
+  toolchainsLoading: boolean;
+  onRefreshToolchains: () => void;
   panelHeight: number;
   minPanelHeight: number;
   maxPanelHeight: () => number;
@@ -30,6 +35,9 @@ export default function BottomPanel({
   cwd,
   onCwdChange,
   output,
+  toolchains,
+  toolchainsLoading,
+  onRefreshToolchains,
   panelHeight,
   minPanelHeight,
   maxPanelHeight,
@@ -56,7 +64,7 @@ export default function BottomPanel({
       />
 
       <div className="bottom-tabs">
-        {(["terminal", "output", "problems", "execution"] as BottomPanelTab[]).map((tab) => (
+        {(["terminal", "output", "problems", "execution", "toolchains"] as BottomPanelTab[]).map((tab) => (
           <button
             type="button"
             key={tab}
@@ -91,6 +99,14 @@ export default function BottomPanel({
 
         <div className={activeTab === "problems" ? "panel-page visible" : "panel-page"}>
           <div className="problems-empty">No problems reported.</div>
+        </div>
+
+        <div className={activeTab === "toolchains" ? "panel-page visible" : "panel-page"}>
+          <ToolchainsPanel
+            report={toolchains}
+            loading={toolchainsLoading}
+            onRefresh={onRefreshToolchains}
+          />
         </div>
 
         <div className={activeTab === "execution" ? "panel-page visible" : "panel-page"}>

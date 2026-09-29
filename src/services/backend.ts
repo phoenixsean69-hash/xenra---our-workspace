@@ -1,4 +1,5 @@
 import type { CommandResult, FileNode, SearchResult } from "../types";
+import type { ToolchainReport } from "../languages/types";
 import type {
   RuntimeTraceMessage,
   RuntimeTraceSessionStart
@@ -54,6 +55,10 @@ export function searchProject(rootPath: string, query: string): Promise<SearchRe
 
 export function gitCommand(cwd: string, args: string[]): Promise<CommandResult> {
   return bridge().gitCommand(cwd, args);
+}
+
+export function detectToolchains(cwd: string): Promise<ToolchainReport> {
+  return bridge().detectToolchains(cwd);
 }
 
 export function preparePythonTrace(rootPath: string, targetPath: string): Promise<RuntimeTraceSessionStart> {

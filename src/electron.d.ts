@@ -1,4 +1,5 @@
 import type { CommandResult, FileNode, SearchResult } from "./types";
+import type { ToolchainReport } from "./languages/types";
 import type {
   RuntimeTraceMessage,
   RuntimeTraceSessionStart
@@ -16,6 +17,7 @@ type XenraDesktopBridge = {
   executeCommand(cwd: string, command: string): Promise<CommandResult>;
   searchProject(rootPath: string, query: string): Promise<SearchResult[]>;
   gitCommand(cwd: string, args: string[]): Promise<CommandResult>;
+  detectToolchains(cwd: string): Promise<ToolchainReport>;
   preparePythonTrace(rootPath: string, targetPath: string): Promise<RuntimeTraceSessionStart>;
   beginPythonTrace(sessionId: string): Promise<boolean>;
   stopPythonTrace(sessionId: string): Promise<boolean>;

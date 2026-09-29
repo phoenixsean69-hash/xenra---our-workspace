@@ -6,6 +6,7 @@ import {
   beginPythonTrace,
   chooseProjectFolder,
   closeWindow,
+  detectToolchains,
   executeCommand,
   onPythonTraceMessage,
   preparePythonTrace,
@@ -14,6 +15,8 @@ import {
   writeTextFile
 } from "./services/backend";
 import { fileName, joinPath, languageFromPath } from "./lib/path";
+import { createBuildPlan, createRunPlan, languageForPath } from "./languages/registry";
+import type { ToolchainReport } from "./languages/types";
 import { BranchIcon, CodeIcon, PlayIcon, SaveIcon, SearchIcon, TerminalIcon } from "./components/Icons";
 import Explorer from "./components/Explorer";
 import EditorTabs from "./components/EditorTabs";
@@ -50,15 +53,6 @@ function readStoredDimension(key: string, fallback: number, min: number, max: nu
   }
 }
 
-function defaultRunCommand(path: string): string | null {
-  const ext = path.split(".").pop()?.toLowerCase();
-  const quoted = `"${path}"`;
-  if (ext === "py") return `python ${quoted}`;
-  if (ext === "js" || ext === "mjs" || ext === "cjs") return `node ${quoted}`;
-  if (ext === "ps1") return `powershell -ExecutionPolicy Bypass -File ${quoted}`;
-  return null;
-}
-
 function emitEditorAction(action: string, detail: Record<string, unknown> = {}) {
   window.dispatchEvent(new CustomEvent("xenra:editor-action", {
     detail: { action, ...detail }
@@ -87,6 +81,8 @@ export default function App() {
   );
   const [terminalCwd, setTerminalCwd] = useState("");
   const [output, setOutput] = useState("");
+  const [toolchains, setToolchains] = useState<ToolchainReport | null>(null);
+  const [toolchainsLoading, setToolchainsLoading] = useState(false);
   const [status, setStatus] = useState("Ready");
   const [treeRevision, setTreeRevision] = useState(0);
   const [overlay, setOverlay] = useState<"about" | "shortcuts" | null>(null);
@@ -436,33 +432,131 @@ export default function App() {
     setActivePath(openFiles[nextIndex].path);
   }, [activePath, openFiles]);
 
+  const refreshToolchainsAt = useCallback(async (cwd: string) => {
+    setToolchainsLoading(true);
+    try {
+      const report = await detectToolchains(cwd);
+      setToolchains(report);
+      return report;
+    } catch (error) {
+      setStatus(`Toolchain scan failed: ${String(error)}`);
+      return null;
+    } finally {
+      setToolchainsLoading(false);
+    }
+  }, []);
+
+  const refreshToolchains = useCallback(async () => {
+    if (!projectRoot) {
+      setStatus("Open a folder first");
+      return null;
+    }
+
+    return await refreshToolchainsAt(projectRoot);
+  }, [projectRoot, refreshToolchainsAt]);
+
+  useEffect(() => {
+    if (!projectRoot) {
+      setToolchains(null);
+      return;
+    }
+
+    void refreshToolchainsAt(projectRoot);
+  }, [projectRoot, refreshToolchainsAt]);
+
+  const resolveToolchains = useCallback(async () => {
+    if (toolchains) return toolchains;
+    if (!projectRoot) return null;
+    return await refreshToolchainsAt(projectRoot);
+  }, [projectRoot, refreshToolchainsAt, toolchains]);
+
   const runActive = useCallback(async () => {
     if (!activeFile || !projectRoot) return;
     await saveActive();
 
-    const command = defaultRunCommand(activeFile.path);
     setBottomOpen(true);
     setBottomTab("output");
 
-    if (!command) {
-      setOutput(
-        `No automatic run command is configured for ${activeFile.language}.\n\n` +
-        "Use the Terminal panel for compiler commands."
-      );
-      setStatus(`No runner for ${activeFile.language}`);
+    const report = await resolveToolchains();
+    if (!report) {
+      setOutput("Toolchain detection failed. Open TOOLCHAINS and refresh the scan.");
       return;
     }
 
-    setOutput(`> ${command}\n\nRunning...`);
-    try {
-      const result = await executeCommand(projectRoot, command);
-      setOutput(`> ${command}\n\n${result.stdout}${result.stderr ? `\n${result.stderr}` : ""}\n\nExit code: ${result.exitCode}`);
-      setStatus(result.exitCode === 0 ? "Run completed" : `Run failed (${result.exitCode})`);
-    } catch (error) {
-      setOutput(`> ${command}\n\n${String(error)}`);
-      setStatus("Run failed");
+    const resolution = createRunPlan(activeFile.path, activeFile.content, report);
+
+    if (!resolution.ok) {
+      const language = resolution.language ?? languageForPath(activeFile.path);
+      setOutput(
+        `${language?.name ?? "This file type"} cannot be run automatically yet.\n\n${resolution.message}\n\n` +
+        (resolution.missing.length
+          ? `Required/alternative toolchains: ${resolution.missing.join(", ")}\n\nOpen TOOLCHAINS to inspect your system.`
+          : "Use the Terminal for a project-specific command.")
+      );
+      setBottomTab("toolchains");
+      setStatus(`Runner unavailable for ${language?.name ?? activeFile.language}`);
+      return;
     }
-  }, [activeFile, projectRoot, saveActive]);
+
+    const { plan } = resolution;
+    setOutput(`[${plan.languageName}] ${plan.description}\n> ${plan.command}\n\nRunning...`);
+
+    try {
+      const result = await executeCommand(projectRoot, plan.command);
+      setOutput(
+        `[${plan.languageName}] ${plan.description}\n> ${plan.command}\n\n` +
+        `${result.stdout}${result.stderr ? `\n${result.stderr}` : ""}\n\nExit code: ${result.exitCode}`
+      );
+      setStatus(result.exitCode === 0 ? `${plan.languageName} run completed` : `${plan.languageName} run failed (${result.exitCode})`);
+    } catch (error) {
+      setOutput(`[${plan.languageName}] ${plan.description}\n> ${plan.command}\n\n${String(error)}`);
+      setStatus(`${plan.languageName} run failed`);
+    }
+  }, [activeFile, projectRoot, resolveToolchains, saveActive]);
+
+  const buildActive = useCallback(async () => {
+    if (!activeFile || !projectRoot) return;
+    await saveActive();
+
+    setBottomOpen(true);
+    setBottomTab("output");
+
+    const report = await resolveToolchains();
+    if (!report) {
+      setOutput("Toolchain detection failed. Open TOOLCHAINS and refresh the scan.");
+      return;
+    }
+
+    const resolution = createBuildPlan(activeFile.path, activeFile.content, report);
+
+    if (!resolution.ok) {
+      const language = resolution.language ?? languageForPath(activeFile.path);
+      setOutput(
+        `${language?.name ?? "This file type"} cannot be built automatically yet.\n\n${resolution.message}\n\n` +
+        (resolution.missing.length
+          ? `Required/alternative toolchains: ${resolution.missing.join(", ")}`
+          : "No direct build action is defined for this language.")
+      );
+      if (resolution.missing.length) setBottomTab("toolchains");
+      setStatus(`Build unavailable for ${language?.name ?? activeFile.language}`);
+      return;
+    }
+
+    const { plan } = resolution;
+    setOutput(`[${plan.languageName}] ${plan.description}\n> ${plan.command}\n\nBuilding...`);
+
+    try {
+      const result = await executeCommand(projectRoot, plan.command);
+      setOutput(
+        `[${plan.languageName}] ${plan.description}\n> ${plan.command}\n\n` +
+        `${result.stdout}${result.stderr ? `\n${result.stderr}` : ""}\n\nExit code: ${result.exitCode}`
+      );
+      setStatus(result.exitCode === 0 ? `${plan.languageName} build completed` : `${plan.languageName} build failed (${result.exitCode})`);
+    } catch (error) {
+      setOutput(`[${plan.languageName}] ${plan.description}\n> ${plan.command}\n\n${String(error)}`);
+      setStatus(`${plan.languageName} build failed`);
+    }
+  }, [activeFile, projectRoot, resolveToolchains, saveActive]);
 
   const stopTrace = useCallback(async () => {
     const sessionId = traceSessionRef.current;
@@ -623,11 +717,21 @@ export default function App() {
       case "run.current":
         void runActive();
         break;
+      case "run.build":
+        void buildActive();
+        break;
       case "run.trace":
         void traceActive();
         break;
       case "run.stopTrace":
         void stopTrace();
+        break;
+      case "run.toolchains":
+        if (projectRoot) {
+          setBottomOpen(true);
+          setBottomTab("toolchains");
+          void refreshToolchains();
+        }
         break;
       case "run.output":
         if (projectRoot) {
@@ -657,10 +761,12 @@ export default function App() {
         break;
     }
   }, [
+    buildActive,
     closeActive,
     moveEditor,
     openProject,
     projectRoot,
+    refreshToolchains,
     runActive,
     saveActive,
     saveAll,
@@ -737,6 +843,12 @@ export default function App() {
         return;
       }
 
+      if (control && event.shiftKey && event.key.toLowerCase() === "b") {
+        event.preventDefault();
+        void buildActive();
+        return;
+      }
+
       if (event.key === "F5") {
         event.preventDefault();
         void runActive();
@@ -750,6 +862,7 @@ export default function App() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [
+    buildActive,
     closeActive,
     moveEditor,
     openProject,
@@ -867,7 +980,7 @@ export default function App() {
             <aside className="explorer-panel empty-project-panel">
               <div className="explorer-heading">
                 <span>EXPLORER</span>
-                <button className="ellipsis-button" type="button" onClick={() => void openProject()} title="Open folder">ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢</button>
+                <button className="ellipsis-button" type="button" onClick={() => void openProject()} title="Open folder">ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢</button>
               </div>
               <div className="empty-project-content">
                 <span>No folder open</span>
@@ -918,6 +1031,9 @@ export default function App() {
               cwd={terminalCwd}
               onCwdChange={setTerminalCwd}
               output={output}
+              toolchains={toolchains}
+              toolchainsLoading={toolchainsLoading}
+              onRefreshToolchains={() => void refreshToolchains()}
               panelHeight={bottomPanelHeight}
               minPanelHeight={BOTTOM_PANEL_MIN_HEIGHT}
               maxPanelHeight={getBottomPanelMax}
@@ -941,14 +1057,14 @@ export default function App() {
           <section className="overlay-dialog" onMouseDown={(event) => event.stopPropagation()}>
             <header>
               <span>{overlay === "about" ? "About XENRA" : "Keyboard Shortcuts"}</span>
-              <button type="button" onClick={() => setOverlay(null)}>ÃƒÆ’Ã¢â‚¬â€</button>
+              <button type="button" onClick={() => setOverlay(null)}>ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â</button>
             </header>
 
             {overlay === "about" ? (
               <div className="about-body">
                 <strong>XENRA 0.1</strong>
                 <p>Production-grade development and execution environment.</p>
-                <p>Electron Ãƒâ€šÃ‚Â· React Ãƒâ€šÃ‚Â· Monaco Ãƒâ€šÃ‚Â· xterm</p>
+                <p>Electron ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· React ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Monaco ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· xterm</p>
               </div>
             ) : (
               <div className="shortcut-table">

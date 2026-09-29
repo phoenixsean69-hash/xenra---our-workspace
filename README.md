@@ -81,3 +81,16 @@ Verify the production renderer:
 ```powershell
 npm run build
 ```
+
+## Language Platform
+
+XENRA uses a registry-driven language platform rather than hardcoded extension runners.
+
+Phase 1 first-class programming languages:
+Python, JavaScript, TypeScript, C, C++, Java, C#, Go, Rust, PHP, Ruby,
+PowerShell, Bash/Shell, and Assembly.
+
+Assembly supports NASM-style `.asm` and GNU/LLVM-style `.s`.
+
+The Toolchains panel reports which real runtimes, compilers and assemblers
+are installed. Generated file-level build output is isolated under `.xenra-build/`.
