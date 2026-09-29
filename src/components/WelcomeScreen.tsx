@@ -3,29 +3,93 @@ import {
   WORKSPACE_MODE_OPTIONS,
   type WorkspaceMode
 } from "../workspace/types";
+import {
+  BranchIcon,
+  CodeIcon,
+  PlayIcon,
+  SearchIcon,
+  TerminalIcon
+} from "./Icons";
 
 type Props = {
   mode: WorkspaceMode;
   languageId: string;
   currentProject: string | null;
   lastProject: string | null;
+  showOnStartup: boolean;
   onModeChange: (mode: WorkspaceMode) => void;
   onLanguageChange: (languageId: string) => void;
   onOpenFolder: () => void;
   onContinueLast: () => void;
   onResume: () => void;
+  onShowOnStartupChange: (value: boolean) => void;
 };
 
 const languages = LANGUAGE_REGISTRY.filter(
   (language) => language.category === "programming"
 );
 
+function workspaceName(path: string) {
+  const normalized = path.replace(/\\/g, "/");
+  return normalized.split("/").filter(Boolean).pop() ?? path;
+}
+
 function compactPath(path: string) {
   const normalized = path.replace(/\\/g, "/");
   const parts = normalized.split("/").filter(Boolean);
 
-  if (parts.length <= 3) return path;
-  return `…/${parts.slice(-3).join("/")}`;
+  if (parts.length <= 4) return normalized;
+  return `…/${parts.slice(-4).join("/")}`;
+}
+
+function ModeGlyph({ mode }: { mode: WorkspaceMode }) {
+  if (mode === "learn") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 5.5c2.8-.9 5.5-.5 8 1.2v12c-2.5-1.7-5.2-2.1-8-1.2z" />
+        <path d="M20 5.5c-2.8-.9-5.5-.5-8 1.2v12c2.5-1.7 5.2-2.1 8-1.2z" />
+      </svg>
+    );
+  }
+
+  if (mode === "analyze") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 19V12" />
+        <path d="M12 19V5" />
+        <path d="M19 19V9" />
+      </svg>
+    );
+  }
+
+  if (mode === "experiment") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M9 3h6" />
+        <path d="M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 18l-5-9V3" />
+        <path d="M8 15h8" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m8.5 7-5 5 5 5" />
+      <path d="m15.5 7 5 5-5 5" />
+      <path d="m13.5 5-3 14" />
+    </svg>
+  );
+}
+
+function ExtensionGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="4" y="4" width="6" height="6" />
+      <rect x="14" y="4" width="6" height="6" />
+      <rect x="4" y="14" width="6" height="6" />
+      <rect x="14" y="14" width="6" height="6" />
+    </svg>
+  );
 }
 
 export default function WelcomeScreen({
@@ -33,142 +97,200 @@ export default function WelcomeScreen({
   languageId,
   currentProject,
   lastProject,
+  showOnStartup,
   onModeChange,
   onLanguageChange,
   onOpenFolder,
   onContinueLast,
-  onResume
+  onResume,
+  onShowOnStartupChange
 }: Props) {
   const selectedLanguage = languageId === "auto"
     ? null
     : languages.find((language) => language.id === languageId) ?? null;
 
+  const recentPath = currentProject ?? lastProject;
+  const closeWelcome = currentProject
+    ? onResume
+    : lastProject
+      ? onContinueLast
+      : null;
+
   return (
-    <main className="welcome-screen">
-      <div className="welcome-shell">
-        <header className="welcome-heading">
-          <div className="welcome-kicker">WORKSPACE SETUP</div>
-          <h1>Choose how you want to work.</h1>
-          <p>
-            Mode controls the starting workbench. Language records the workspace
-            context while each source file keeps XENRA's normal auto-detection.
-          </p>
-        </header>
-
-        <div className="welcome-columns">
-          <section className="welcome-section" aria-labelledby="welcome-mode-heading">
-            <div className="welcome-section-heading">
-              <span id="welcome-mode-heading">MODE</span>
-              <span>{WORKSPACE_MODE_OPTIONS.find((option) => option.id === mode)?.label}</span>
-            </div>
-
-            <div className="welcome-mode-list">
-              {WORKSPACE_MODE_OPTIONS.map((option) => (
-                <button
-                  type="button"
-                  key={option.id}
-                  className={mode === option.id ? "welcome-mode-row selected" : "welcome-mode-row"}
-                  aria-pressed={mode === option.id}
-                  onClick={() => onModeChange(option.id)}
-                >
-                  <span className="welcome-mode-code">{option.shortLabel}</span>
-                  <span className="welcome-mode-copy">
-                    <strong>{option.label}</strong>
-                    <span>{option.description}</span>
-                    <small>{option.detail}</small>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="welcome-section welcome-language-section" aria-labelledby="welcome-language-heading">
-            <div className="welcome-section-heading">
-              <span id="welcome-language-heading">LANGUAGE FOCUS</span>
-              <span>{selectedLanguage?.name ?? "Auto-detect"}</span>
-            </div>
-
-            <button
-              type="button"
-              className={languageId === "auto" ? "welcome-language-auto selected" : "welcome-language-auto"}
-              aria-pressed={languageId === "auto"}
-              onClick={() => onLanguageChange("auto")}
-            >
-              <span>AUTO</span>
-              <span>
-                <strong>Auto-detect</strong>
-                <small>Use each file and project’s detected language.</small>
-              </span>
-            </button>
-
-            <div className="welcome-language-grid">
-              {languages.map((language) => (
-                <button
-                  type="button"
-                  key={language.id}
-                  className={languageId === language.id ? "welcome-language-button selected" : "welcome-language-button"}
-                  aria-pressed={languageId === language.id}
-                  onClick={() => onLanguageChange(language.id)}
-                  title={language.notes ?? language.name}
-                >
-                  <span>{language.name}</span>
-                  <small>{language.extensions.map((extension) => `.${extension}`).slice(0, 3).join("  ")}</small>
-                </button>
-              ))}
-            </div>
-
-            <div className="welcome-language-note">
-              Language focus is saved with your XENRA workspace preference. Source
-              files remain extension-detected, so mixed-language projects stay safe.
-            </div>
-          </section>
+    <main className="welcome-ref-shell">
+      <aside className="welcome-ref-rail" aria-hidden="true">
+        <div className="welcome-ref-rail-top">
+          <span className="welcome-ref-rail-item active"><CodeIcon /></span>
+          <span className="welcome-ref-rail-item"><SearchIcon /></span>
+          <span className="welcome-ref-rail-item"><BranchIcon /></span>
+          <span className="welcome-ref-rail-item"><PlayIcon /></span>
+          <span className="welcome-ref-rail-item"><ExtensionGlyph /></span>
         </div>
 
-        <footer className="welcome-footer">
-          <div className="welcome-context">
-            <span className="welcome-context-label">
-              {currentProject ? "CURRENT WORKSPACE" : lastProject ? "LAST WORKSPACE" : "WORKSPACE"}
-            </span>
-            <code title={currentProject ?? lastProject ?? ""}>
-              {currentProject
-                ? compactPath(currentProject)
-                : lastProject
-                  ? compactPath(lastProject)
-                  : "No folder selected"}
-            </code>
+        <div className="welcome-ref-rail-bottom">
+          <span className="welcome-ref-user">◎</span>
+          <span className="welcome-ref-gear">⚙</span>
+        </div>
+      </aside>
+
+      <section className="welcome-ref-editor">
+        <div className="welcome-ref-tabs">
+          <div className="welcome-ref-tab active">
+            <CodeIcon />
+            <span>Welcome</span>
+            {closeWelcome && (
+              <button
+                type="button"
+                className="welcome-ref-tab-close"
+                onClick={closeWelcome}
+                aria-label="Close Welcome"
+                title="Close Welcome"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="welcome-ref-body">
+          <div className="welcome-ref-content">
+            <header className="welcome-ref-heading">
+              <h1>XENRA</h1>
+              <p>Write. Run. See. Experiment.</p>
+            </header>
+
+            <div className="welcome-ref-columns">
+              <div className="welcome-ref-left">
+                <section className="welcome-ref-section">
+                  <h2>Start</h2>
+
+                  <div className="welcome-ref-links">
+                    {currentProject && (
+                      <button type="button" onClick={onResume}>
+                        <span className="welcome-ref-link-icon">↗</span>
+                        <span>Resume Workspace</span>
+                      </button>
+                    )}
+
+                    <button type="button" onClick={onOpenFolder}>
+                      <span className="welcome-ref-link-icon">⌑</span>
+                      <span>Open Folder...</span>
+                    </button>
+
+                    {!currentProject && lastProject && (
+                      <button type="button" onClick={onContinueLast}>
+                        <span className="welcome-ref-link-icon">↶</span>
+                        <span>Continue Last Workspace</span>
+                      </button>
+                    )}
+                  </div>
+                </section>
+
+                <section className="welcome-ref-section welcome-ref-recent">
+                  <h2>Recent</h2>
+
+                  {recentPath ? (
+                    <button
+                      type="button"
+                      className="welcome-ref-recent-item"
+                      onClick={currentProject ? onResume : onContinueLast}
+                      title={recentPath}
+                    >
+                      <strong>{workspaceName(recentPath)}</strong>
+                      <small>{compactPath(recentPath)}</small>
+                    </button>
+                  ) : (
+                    <p>
+                      You have no recent folders,{" "}
+                      <button type="button" onClick={onOpenFolder}>
+                        open a folder
+                      </button>{" "}
+                      to start.
+                    </p>
+                  )}
+                </section>
+              </div>
+
+              <div className="welcome-ref-right">
+                <section className="welcome-ref-section">
+                  <h2>Workspace Modes</h2>
+
+                  <div className="welcome-ref-mode-list">
+                    {WORKSPACE_MODE_OPTIONS.map((option) => (
+                      <button
+                        type="button"
+                        key={option.id}
+                        className={
+                          mode === option.id
+                            ? `welcome-ref-mode welcome-ref-mode--${option.id} selected`
+                            : `welcome-ref-mode welcome-ref-mode--${option.id}`
+                        }
+                        aria-pressed={mode === option.id}
+                        onClick={() => onModeChange(option.id)}
+                      >
+                        <span className="welcome-ref-mode-icon">
+                          <ModeGlyph mode={option.id} />
+                        </span>
+
+                        <span className="welcome-ref-mode-copy">
+                          <strong>{option.label}</strong>
+                          <small>{option.description}</small>
+                        </span>
+
+                        <span className="welcome-ref-mode-accent" />
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="welcome-ref-section welcome-ref-language">
+                  <div className="welcome-ref-language-heading">
+                    <h2>Preferred Language</h2>
+                    <span>{selectedLanguage?.name ?? "Auto-detect"}</span>
+                  </div>
+
+                  <label className="welcome-ref-select">
+                    <span className="welcome-ref-sr-only">Preferred Language</span>
+                    <select
+                      value={languageId}
+                      onChange={(event) => onLanguageChange(event.target.value)}
+                    >
+                      <option value="auto">Auto-detect</option>
+                      {languages.map((language) => (
+                        <option value={language.id} key={language.id}>
+                          {language.name}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="welcome-ref-select-arrow">⌄</span>
+                  </label>
+                </section>
+              </div>
+            </div>
           </div>
 
-          <div className="welcome-actions">
-            {currentProject ? (
-              <button
-                type="button"
-                className="welcome-secondary-action"
-                onClick={onResume}
-              >
-                Resume Workspace
-              </button>
-            ) : lastProject ? (
-              <button
-                type="button"
-                className="welcome-secondary-action"
-                onClick={onContinueLast}
-              >
-                Continue Last
-              </button>
-            ) : null}
+          <label className="welcome-ref-startup">
+            <input
+              type="checkbox"
+              checked={showOnStartup}
+              onChange={(event) => onShowOnStartupChange(event.target.checked)}
+            />
+            <span>Show welcome page on startup</span>
+          </label>
+        </div>
 
-            <button
-              type="button"
-              className="welcome-primary-action"
-              onClick={onOpenFolder}
-            >
-              {currentProject ? "Open Another Folder…" : "Open Folder…"}
-            </button>
+        <footer className="welcome-ref-status">
+          <div>
+            <span>XENRA</span>
+            <span>{mode.toUpperCase()}</span>
+            <span>{selectedLanguage?.name ?? "AUTO"}</span>
+          </div>
+          <div>
+            <TerminalIcon />
+            <span>Ready</span>
           </div>
         </footer>
-
-        <div className="welcome-philosophy">WRITE · RUN · SEE · EXPERIMENT</div>
-      </div>
+      </section>
     </main>
   );
 }
