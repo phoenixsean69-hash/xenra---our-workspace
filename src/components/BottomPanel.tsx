@@ -20,6 +20,7 @@ type Props = {
   toolchains: ToolchainReport | null;
   toolchainsLoading: boolean;
   onRefreshToolchains: () => void;
+  executionDefaultMode: "simple" | "advanced";
   panelHeight: number;
   minPanelHeight: number;
   maxPanelHeight: () => number;
@@ -45,6 +46,7 @@ export default function BottomPanel({
   toolchains,
   toolchainsLoading,
   onRefreshToolchains,
+  executionDefaultMode,
   panelHeight,
   minPanelHeight,
   maxPanelHeight,
@@ -128,6 +130,7 @@ export default function BottomPanel({
             onTraceAgain={onTraceAgain}
             onStopTrace={onStopTrace}
             onOpenEvent={onOpenTraceEvent}
+            initialMode={executionDefaultMode}
           />
         </div>
       </div>

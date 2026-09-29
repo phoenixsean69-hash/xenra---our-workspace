@@ -94,3 +94,20 @@ Assembly supports NASM-style `.asm` and GNU/LLVM-style `.s`.
 
 The Toolchains panel reports which real runtimes, compilers and assemblers
 are installed. Generated file-level build output is isolated under `.xenra-build/`.
+## Workspace Welcome
+
+XENRA starts with a workspace selector rather than dropping users directly into an editor.
+
+Workspace modes:
+
+- Develop — editor-first
+- Learn — simplified execution view
+- Analyze — advanced runtime view
+- Experiment — terminal-first
+
+Users also choose a language focus or Auto-detect. The language focus prioritizes
+matching toolchains and supplies syntax for extensionless/plain files while normal
+file extensions remain authoritative.
+
+The Welcome screen can be reopened from the compact mode/language control in the
+title bar.

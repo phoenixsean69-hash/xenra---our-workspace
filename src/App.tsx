@@ -21,8 +21,12 @@ import {
   writeTextFile
 } from "./services/backend";
 import { fileName, joinPath, languageFromPath } from "./lib/path";
-import { createBuildPlan, createRunPlan, languageForPath } from "./languages/registry";
+import { createBuildPlan, createRunPlan, LANGUAGE_REGISTRY, languageForPath } from "./languages/registry";
 import type { ToolchainReport } from "./languages/types";
+import {
+  workspaceModeLabel,
+  type WorkspaceMode
+} from "./workspace/types";
 import { BranchIcon, CodeIcon, PlayIcon, SaveIcon, SearchIcon, TerminalIcon } from "./components/Icons";
 import Explorer from "./components/Explorer";
 import EditorTabs from "./components/EditorTabs";
@@ -32,8 +36,11 @@ import MenuBar, { type MenuAction } from "./components/MenuBar";
 import SearchPanel from "./components/SearchPanel";
 import SourceControlPanel from "./components/SourceControlPanel";
 import ResizeHandle from "./components/ResizeHandle";
+import WelcomeScreen from "./components/WelcomeScreen";
 
 const LAST_PROJECT_KEY = "xenra:last-project";
+const WORKSPACE_MODE_KEY = "xenra:workspace:mode";
+const WORKSPACE_LANGUAGE_KEY = "xenra:workspace:language";
 const SIDEBAR_WIDTH_KEY = "xenra:layout:sidebar-width";
 const BOTTOM_PANEL_HEIGHT_KEY = "xenra:layout:bottom-panel-height";
 
@@ -59,6 +66,39 @@ function readStoredDimension(key: string, fallback: number, min: number, max: nu
   }
 }
 
+function readWorkspaceMode(): WorkspaceMode {
+  try {
+    const stored = localStorage.getItem(WORKSPACE_MODE_KEY);
+
+    if (
+      stored === "develop" ||
+      stored === "learn" ||
+      stored === "analyze" ||
+      stored === "experiment"
+    ) {
+      return stored;
+    }
+  } catch {
+    // localStorage can be unavailable in unusual renderer environments.
+  }
+
+  return "develop";
+}
+
+function readWorkspaceLanguage() {
+  try {
+    const stored = localStorage.getItem(WORKSPACE_LANGUAGE_KEY);
+    if (!stored || stored === "auto") return "auto";
+
+    return LANGUAGE_REGISTRY.some(
+      (language) => language.category === "programming" && language.id === stored
+    )
+      ? stored
+      : "auto";
+  } catch {
+    return "auto";
+  }
+}
 function emitEditorAction(action: string, detail: Record<string, unknown> = {}) {
   window.dispatchEvent(new CustomEvent("xenra:editor-action", {
     detail: { action, ...detail }
@@ -73,6 +113,16 @@ function emitTerminalAction(action: string) {
 
 export default function App() {
   const [projectRoot, setProjectRoot] = useState<string | null>(null);
+  const [lastProject, setLastProject] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(LAST_PROJECT_KEY);
+    } catch {
+      return null;
+    }
+  });
+  const [welcomeOpen, setWelcomeOpen] = useState(true);
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => readWorkspaceMode());
+  const [preferredLanguageId, setPreferredLanguageId] = useState(() => readWorkspaceLanguage());
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
@@ -331,57 +381,124 @@ export default function App() {
     return () => window.removeEventListener("resize", clampLayout);
   }, [getBottomPanelMax, getSidebarMax]);
 
+  const preferredLanguage = useMemo(
+    () => preferredLanguageId === "auto"
+      ? null
+      : LANGUAGE_REGISTRY.find((language) => language.id === preferredLanguageId) ?? null,
+    [preferredLanguageId]
+  );
+
+  const executionDefaultMode = workspaceMode === "analyze" ? "advanced" : "simple";
+
+  const applyWorkspacePreset = useCallback((mode: WorkspaceMode) => {
+    switch (mode) {
+      case "learn":
+      case "analyze":
+        setBottomTab("execution");
+        setBottomOpen(true);
+        break;
+      case "experiment":
+        setBottomTab("terminal");
+        setBottomOpen(true);
+        break;
+      case "develop":
+      default:
+        setBottomOpen(false);
+        break;
+    }
+  }, []);
+
+  const persistWorkspacePreferences = useCallback(() => {
+    localStorage.setItem(WORKSPACE_MODE_KEY, workspaceMode);
+    localStorage.setItem(WORKSPACE_LANGUAGE_KEY, preferredLanguageId);
+  }, [preferredLanguageId, workspaceMode]);
   const activeFile = useMemo(
     () => openFiles.find((file) => file.path === activePath) ?? null,
     [openFiles, activePath]
   );
 
   const projectName = projectRoot ? fileName(projectRoot) : "No Folder";
-  const windowTitle = activeFile
-    ? `${activeFile.name} - ${projectName} - XENRA`
-    : projectRoot
-      ? `${projectName} - XENRA`
-      : "XENRA";
+  const windowTitle = welcomeOpen
+    ? "Welcome - XENRA"
+    : activeFile
+      ? `${activeFile.name} - ${projectName} - XENRA`
+      : projectRoot
+        ? `${projectName} - XENRA`
+        : "XENRA";
+
+  const activateProject = useCallback(async (selected: string) => {
+    const activeRun = runSessionRef.current;
+    if (activeRun) {
+      await stopRunSession(activeRun);
+      runSessionRef.current = null;
+      setRunRunning(false);
+    }
+
+    const activeTrace = traceSessionRef.current;
+    if (activeTrace) {
+      await stopPythonTrace(activeTrace);
+      traceSessionRef.current = null;
+    }
+
+    setProjectRoot(selected);
+    setLastProject(selected);
+    setTerminalCwd(selected);
+    setSelectedPath(selected);
+    setOpenFiles([]);
+    setActivePath(null);
+    setActiveView("explorer");
+    setTraceResult(null);
+
+    localStorage.setItem(LAST_PROJECT_KEY, selected);
+    persistWorkspacePreferences();
+    applyWorkspacePreset(workspaceMode);
+    setWelcomeOpen(false);
+
+    setStatus(
+      `${workspaceModeLabel(workspaceMode)} · ${preferredLanguage?.name ?? "Auto"} · ${fileName(selected)}`
+    );
+  }, [
+    applyWorkspacePreset,
+    persistWorkspacePreferences,
+    preferredLanguage,
+    workspaceMode
+  ]);
 
   const openProject = useCallback(async () => {
     try {
       const selected = await chooseProjectFolder();
       if (!selected) return;
-      const activeRun = runSessionRef.current;
-      if (activeRun) {
-        await stopRunSession(activeRun);
-        runSessionRef.current = null;
-        setRunRunning(false);
-      }
 
-      const activeTrace = traceSessionRef.current;
-      if (activeTrace) {
-        await stopPythonTrace(activeTrace);
-        traceSessionRef.current = null;
-      }
-
-      setProjectRoot(selected);
-      setTerminalCwd(selected);
-      setSelectedPath(selected);
-      setOpenFiles([]);
-      setActivePath(null);
-      setActiveView("explorer");
-      setTraceResult(null);
-      localStorage.setItem(LAST_PROJECT_KEY, selected);
-      setStatus(`Opened ${fileName(selected)}`);
+      await activateProject(selected);
     } catch (error) {
       setStatus(`Open failed: ${String(error)}`);
     }
-  }, []);
+  }, [activateProject]);
 
-  useEffect(() => {
-    const lastProject = localStorage.getItem(LAST_PROJECT_KEY);
-    if (lastProject) {
-      setProjectRoot(lastProject);
-      setTerminalCwd(lastProject);
-      setSelectedPath(lastProject);
+  const continueLastProject = useCallback(async () => {
+    if (!lastProject) return;
+
+    try {
+      await activateProject(lastProject);
+    } catch (error) {
+      setStatus(`Continue failed: ${String(error)}`);
     }
-  }, []);
+  }, [activateProject, lastProject]);
+
+  const resumeWorkspace = useCallback(() => {
+    if (!projectRoot) return;
+
+    persistWorkspacePreferences();
+    applyWorkspacePreset(workspaceMode);
+    setWelcomeOpen(false);
+    setStatus(`${workspaceModeLabel(workspaceMode)} · ${preferredLanguage?.name ?? "Auto"}`);
+  }, [
+    applyWorkspacePreset,
+    persistWorkspacePreferences,
+    preferredLanguage,
+    projectRoot,
+    workspaceMode
+  ]);
 
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
@@ -929,6 +1046,14 @@ export default function App() {
     const handler = (event: KeyboardEvent) => {
       const control = event.ctrlKey || event.metaKey;
 
+      if (welcomeOpen) {
+        if (event.key === "Escape" && projectRoot) {
+          event.preventDefault();
+          resumeWorkspace();
+        }
+        return;
+      }
+
       if (control && event.key.toLowerCase() === "s" && event.shiftKey) {
         event.preventDefault();
         void saveAll();
@@ -1018,9 +1143,11 @@ export default function App() {
     openProject,
     overlay,
     projectRoot,
+    resumeWorkspace,
     runActive,
     saveActive,
-    saveAll
+    saveAll,
+    welcomeOpen
   ]);
 
   const openSearchResult = (result: SearchResult) => {
@@ -1034,31 +1161,64 @@ export default function App() {
   };
 
   return (
-    <div className="app-shell">
+    <div className={welcomeOpen ? "app-shell welcome-open" : "app-shell"}>
       <header className="titlebar">
         <div className="title-left">
           <span className="app-wordmark">XENRA</span>
-          <MenuBar
+          {!welcomeOpen && (
+            <MenuBar
             onAction={handleMenuAction}
             hasProject={Boolean(projectRoot)}
             hasActiveFile={Boolean(activeFile)}
             hasOpenFiles={openFiles.length > 0}
             traceRunning={traceRunning}
           />
+          )}
         </div>
 
         <div className="window-title" title={windowTitle}>{windowTitle}</div>
 
         <div className="title-actions">
-          <span className="title-status" title={status}>{status}</span>
-          <button className="chrome-action" type="button" onClick={() => void saveActive()} disabled={!activeFile} title="Save">
-            <SaveIcon />
-          </button>
-          <button className="chrome-action" type="button" onClick={() => void runActive()} disabled={!activeFile || !projectRoot} title="Run">
-            <PlayIcon />
-          </button>
+          {!welcomeOpen && (
+            <>
+              <button
+                className="workspace-context-button"
+                type="button"
+                onClick={() => setWelcomeOpen(true)}
+                title="Change workspace mode or language"
+              >
+                <span>{workspaceModeLabel(workspaceMode)}</span>
+                <span>·</span>
+                <span>{preferredLanguage?.name ?? "Auto"}</span>
+              </button>
+
+              <span className="title-status" title={status}>{status}</span>
+
+              <button className="chrome-action" type="button" onClick={() => void saveActive()} disabled={!activeFile} title="Save">
+                <SaveIcon />
+              </button>
+
+              <button className="chrome-action" type="button" onClick={() => void runActive()} disabled={!activeFile || !projectRoot} title="Run">
+                <PlayIcon />
+              </button>
+            </>
+          )}
         </div>
       </header>
+
+      {welcomeOpen && (
+        <WelcomeScreen
+          mode={workspaceMode}
+          languageId={preferredLanguageId}
+          currentProject={projectRoot}
+          lastProject={lastProject}
+          onModeChange={setWorkspaceMode}
+          onLanguageChange={setPreferredLanguageId}
+          onOpenFolder={() => void openProject()}
+          onContinueLast={() => void continueLastProject()}
+          onResume={resumeWorkspace}
+        />
+      )}
 
       <div
         className="workbench"
@@ -1130,7 +1290,7 @@ export default function App() {
             <aside className="explorer-panel empty-project-panel">
               <div className="explorer-heading">
                 <span>EXPLORER</span>
-                <button className="ellipsis-button" type="button" onClick={() => void openProject()} title="Open folder">ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢</button>
+                <button className="ellipsis-button" type="button" onClick={() => void openProject()} title="Open folder">ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢</button>
               </div>
               <div className="empty-project-content">
                 <span>No folder open</span>
@@ -1187,6 +1347,7 @@ export default function App() {
               toolchains={toolchains}
               toolchainsLoading={toolchainsLoading}
               onRefreshToolchains={() => void refreshToolchains()}
+              executionDefaultMode={executionDefaultMode}
               panelHeight={bottomPanelHeight}
               minPanelHeight={BOTTOM_PANEL_MIN_HEIGHT}
               maxPanelHeight={getBottomPanelMax}
@@ -1210,14 +1371,14 @@ export default function App() {
           <section className="overlay-dialog" onMouseDown={(event) => event.stopPropagation()}>
             <header>
               <span>{overlay === "about" ? "About XENRA" : "Keyboard Shortcuts"}</span>
-              <button type="button" onClick={() => setOverlay(null)}>ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â</button>
+              <button type="button" onClick={() => setOverlay(null)}>ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â</button>
             </header>
 
             {overlay === "about" ? (
               <div className="about-body">
                 <strong>XENRA 0.1</strong>
                 <p>Production-grade development and execution environment.</p>
-                <p>Electron ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· React ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Monaco ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· xterm</p>
+                <p>Electron ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· React ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Monaco ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· xterm</p>
               </div>
             ) : (
               <div className="shortcut-table">

@@ -7,6 +7,7 @@ type Props = {
   onTraceAgain: () => void;
   onStopTrace: () => void;
   onOpenEvent: (event: RuntimeTraceEvent) => void;
+  initialMode?: ExecutionMode;
 };
 
 type ExecutionMode = "simple" | "advanced";
@@ -116,7 +117,7 @@ function SimpleExecutionView({
       : result?.exitCode === 0
         ? "Completed"
         : result
-          ? `Exited with code ${result.exitCode ?? "—"}`
+          ? `Exited with code ${result.exitCode ?? "â€”"}`
           : "Idle";
 
   const message = latest
@@ -260,7 +261,7 @@ function AdvancedExecutionView({
   if (!result) {
     return (
       <div className="execution-empty">
-        <span>{running ? "Starting trace…" : "No execution trace."}</span>
+        <span>{running ? "Starting traceâ€¦" : "No execution trace."}</span>
         {running ? (
           <button type="button" onClick={onStopTrace}>Stop Trace</button>
         ) : (
@@ -280,7 +281,7 @@ function AdvancedExecutionView({
           {running && <span className="execution-live-label">LIVE</span>}
           <span>{result.events.length.toLocaleString()} events</span>
           <span>{elapsedMs.toFixed(1)} ms</span>
-          {!running && <span>exit {result.exitCode ?? "—"}</span>}
+          {!running && <span>exit {result.exitCode ?? "â€”"}</span>}
           {result.stopped && <span>stopped</span>}
           {result.truncated && <span>limit {result.eventLimit.toLocaleString()}</span>}
 
@@ -295,7 +296,7 @@ function AdvancedExecutionView({
 
         <div className="execution-events" role="list">
           {!result.events.length && running && (
-            <div className="execution-live-wait">Waiting for the first runtime event…</div>
+            <div className="execution-live-wait">Waiting for the first runtime eventâ€¦</div>
           )}
 
           {result.events.map((event) => (
@@ -382,8 +383,12 @@ function AdvancedExecutionView({
   );
 }
 
-export default function ExecutionPanel(props: Props) {
-  const [mode, setMode] = useState<ExecutionMode>("simple");
+export default function ExecutionPanel({ initialMode = "simple", ...props }: Props) {
+  const [mode, setMode] = useState<ExecutionMode>(initialMode);
+
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode]);
 
   return (
     <div className="execution-shell">
