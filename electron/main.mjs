@@ -187,6 +187,224 @@ async function detectToolchains(cwdValue) {
   };
 }
 
+const runSessions = new Map();
+const runCleanupSenders = new Set();
+
+function sendRunSessionMessage(session, message) {
+  if (!session?.sender || session.sender.isDestroyed()) return;
+
+  session.sender.send("process:run-session-message", {
+    sessionId: session.id,
+    ...message
+  });
+}
+
+function finalizeRunSession(session, {
+  exitCode = 1,
+  stopped = false,
+  error = undefined
+} = {}) {
+  if (!session || session.finished) return;
+
+  session.finished = true;
+  runSessions.delete(session.id);
+
+  if (error) {
+    sendRunSessionMessage(session, {
+      type: "error",
+      message: error
+    });
+  }
+
+  sendRunSessionMessage(session, {
+    type: "complete",
+    durationMs: Date.now() - session.startedEpochMs,
+    exitCode,
+    stopped
+  });
+}
+
+function beginRunProcess(session) {
+  if (!session || session.finished || session.launchRequested) return false;
+
+  session.launchRequested = true;
+  const isWindows = process.platform === "win32";
+
+  const executable = isWindows ? "powershell.exe" : "/bin/sh";
+  const args = isWindows
+    ? ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", session.command]
+    : ["-lc", session.command];
+
+  const child = spawn(executable, args, {
+    cwd: session.cwd,
+    windowsHide: true,
+    env: {
+      ...process.env,
+      PYTHONUNBUFFERED: "1",
+      PYTHONIOENCODING: "utf-8"
+    }
+  });
+
+  session.child = child;
+
+  child.stdout?.setEncoding("utf8");
+  child.stderr?.setEncoding("utf8");
+
+  child.stdout?.on("data", (chunk) => {
+    if (session.finished || session.child !== child) return;
+    sendRunSessionMessage(session, {
+      type: "stdout",
+      chunk
+    });
+  });
+
+  child.stderr?.on("data", (chunk) => {
+    if (session.finished || session.child !== child) return;
+    sendRunSessionMessage(session, {
+      type: "stderr",
+      chunk
+    });
+  });
+
+  child.on("error", (error) => {
+    if (session.finished || session.child !== child) return;
+
+    finalizeRunSession(session, {
+      exitCode: 1,
+      error: errorMessage(error)
+    });
+  });
+
+  child.on("close", (code, signal) => {
+    if (session.finished || session.child !== child) return;
+
+    const stopped =
+      session.stopRequested ||
+      signal === "SIGTERM" ||
+      signal === "SIGKILL";
+
+    finalizeRunSession(session, {
+      exitCode: code ?? (stopped ? 130 : 1),
+      stopped
+    });
+  });
+
+  return true;
+}
+
+async function prepareRunSession(sender, cwdValue, commandValue) {
+  const cwd = path.resolve(String(cwdValue ?? ""));
+  const command = String(commandValue ?? "").trim();
+
+  if (!command) {
+    throw new Error("Run command is empty.");
+  }
+
+  if (command.length > 32768) {
+    throw new Error("Run command is too long.");
+  }
+
+  const cwdStat = await fs.stat(cwd);
+  if (!cwdStat.isDirectory()) {
+    throw new Error("Run working directory is not a directory.");
+  }
+
+  stopRunSessionsForSender(sender.id);
+
+  const session = {
+    id: randomUUID(),
+    sender,
+    senderId: sender.id,
+    cwd,
+    command,
+    startedAt: new Date().toISOString(),
+    startedEpochMs: Date.now(),
+    child: null,
+    launchRequested: false,
+    stopRequested: false,
+    finished: false
+  };
+
+  runSessions.set(session.id, session);
+
+  return {
+    sessionId: session.id,
+    cwd,
+    command,
+    startedAt: session.startedAt
+  };
+}
+
+function writeRunSession(session, inputValue) {
+  if (!session || session.finished) return false;
+
+  const input = String(inputValue ?? "");
+  if (Buffer.byteLength(input, "utf8") > 65536) {
+    throw new Error("Run input exceeds the 64 KB limit.");
+  }
+
+  const stdin = session.child?.stdin;
+  if (!stdin || stdin.destroyed || !stdin.writable) {
+    return false;
+  }
+
+  stdin.write(input);
+  return true;
+}
+
+function stopRunSession(session) {
+  if (!session || session.finished) return false;
+
+  session.stopRequested = true;
+  const child = session.child;
+
+  if (!child || child.killed) {
+    finalizeRunSession(session, {
+      exitCode: 130,
+      stopped: true
+    });
+    return true;
+  }
+
+  if (process.platform === "win32" && child.pid) {
+    const killer = spawn(
+      "taskkill",
+      ["/PID", String(child.pid), "/T", "/F"],
+      {
+        windowsHide: true
+      }
+    );
+
+    killer.on("error", () => {
+      try { child.kill(); } catch { /* already stopped */ }
+    });
+
+    killer.on("close", (code) => {
+      if (code !== 0 && !session.finished) {
+        try { child.kill(); } catch { /* already stopped */ }
+      }
+    });
+  } else {
+    try { child.kill("SIGTERM"); } catch { /* already stopped */ }
+  }
+
+  setTimeout(() => {
+    if (!session.finished && session.child === child) {
+      try { child.kill("SIGKILL"); } catch { /* already stopped */ }
+    }
+  }, 1500);
+
+  return true;
+}
+
+function stopRunSessionsForSender(senderId) {
+  for (const session of runSessions.values()) {
+    if (session.senderId === senderId) {
+      stopRunSession(session);
+    }
+  }
+}
+
 const pythonTraceSessions = new Map();
 const traceCleanupSenders = new Set();
 const TRACE_EVENT_LIMIT = 5000;
@@ -714,6 +932,46 @@ function registerIpc() {
   ipcMain.handle("runtime:stop-python-trace", async (_event, { sessionId }) => {
     const session = pythonTraceSessions.get(String(sessionId ?? ""));
     return stopTraceSession(session);
+  });
+
+  ipcMain.handle("process:prepare-run-session", async (event, { cwd, command }) => {
+    try {
+      const sender = event.sender;
+      const senderId = sender.id;
+
+      if (!runCleanupSenders.has(senderId)) {
+        runCleanupSenders.add(senderId);
+
+        sender.once("destroyed", () => {
+          runCleanupSenders.delete(senderId);
+          stopRunSessionsForSender(senderId);
+        });
+      }
+
+      return await prepareRunSession(sender, cwd, command);
+    } catch (error) {
+      throw new Error(`Run session failed: ${errorMessage(error)}`);
+    }
+  });
+
+  ipcMain.handle("process:begin-run-session", async (_event, { sessionId }) => {
+    const session = runSessions.get(String(sessionId ?? ""));
+    return beginRunProcess(session);
+  });
+
+  ipcMain.handle("process:write-run-session", async (_event, { sessionId, input }) => {
+    const session = runSessions.get(String(sessionId ?? ""));
+
+    try {
+      return writeRunSession(session, input);
+    } catch (error) {
+      throw new Error(`Run input failed: ${errorMessage(error)}`);
+    }
+  });
+
+  ipcMain.handle("process:stop-run-session", async (_event, { sessionId }) => {
+    const session = runSessions.get(String(sessionId ?? ""));
+    return stopRunSession(session);
   });
 
   ipcMain.handle("language:detect-toolchains", async (_event, { cwd }) => {

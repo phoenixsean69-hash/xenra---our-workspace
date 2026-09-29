@@ -2,16 +2,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { BottomPanelTab, FileNode, OpenFile, SearchResult, SidebarView } from "./types";
 import type { RuntimeTraceEvent, RuntimeTraceMessage, RuntimeTraceResult } from "./runtime/types";
+import type { RunSessionMessage } from "./run/types";
 import {
   beginPythonTrace,
+  beginRunSession,
   chooseProjectFolder,
   closeWindow,
   detectToolchains,
   executeCommand,
   onPythonTraceMessage,
+  onRunSessionMessage,
   preparePythonTrace,
+  prepareRunSession,
   readTextFile,
   stopPythonTrace,
+  stopRunSession,
+  writeRunSession,
   writeTextFile
 } from "./services/backend";
 import { fileName, joinPath, languageFromPath } from "./lib/path";
@@ -81,6 +87,7 @@ export default function App() {
   );
   const [terminalCwd, setTerminalCwd] = useState("");
   const [output, setOutput] = useState("");
+  const [runRunning, setRunRunning] = useState(false);
   const [toolchains, setToolchains] = useState<ToolchainReport | null>(null);
   const [toolchainsLoading, setToolchainsLoading] = useState(false);
   const [status, setStatus] = useState("Ready");
@@ -88,11 +95,92 @@ export default function App() {
   const [overlay, setOverlay] = useState<"about" | "shortcuts" | null>(null);
   const [traceResult, setTraceResult] = useState<RuntimeTraceResult | null>(null);
   const [traceRunning, setTraceRunning] = useState(false);
+  const runSessionRef = useRef<string | null>(null);
+  const runQueueRef = useRef<RunSessionMessage[]>([]);
+  const runFlushTimerRef = useRef<number | null>(null);
   const traceSessionRef = useRef<string | null>(null);
   const traceQueueRef = useRef<RuntimeTraceMessage[]>([]);
   const traceFlushTimerRef = useRef<number | null>(null);
   const mainColumnRef = useRef<HTMLElement | null>(null);
 
+  useEffect(() => {
+    const flushRunOutput = () => {
+      runFlushTimerRef.current = null;
+
+      const messages = runQueueRef.current.splice(0);
+      if (!messages.length) return;
+
+      let chunk = "";
+      let completed: Extract<RunSessionMessage, { type: "complete" }> | null = null;
+      let runError: string | null = null;
+
+      for (const message of messages) {
+        if (message.type === "stdout" || message.type === "stderr") {
+          chunk += message.chunk;
+        } else if (message.type === "error") {
+          runError = message.message;
+          chunk += `\n[Run error] ${message.message}\n`;
+        } else if (message.type === "complete") {
+          completed = message;
+        }
+      }
+
+      if (chunk) {
+        setOutput((current) => {
+          const next = current + chunk;
+          const limit = 750_000;
+
+          return next.length > limit
+            ? `[Older live output trimmed]\n${next.slice(-limit)}`
+            : next;
+        });
+      }
+
+      if (runError) {
+        setStatus(`Run error: ${runError}`);
+      }
+
+      if (completed) {
+        const final = completed;
+        setRunRunning(false);
+        runSessionRef.current = null;
+
+        setOutput((current) =>
+          `${current}${current.endsWith("\n") ? "" : "\n"}\n` +
+          (final.stopped
+            ? `[Process stopped after ${final.durationMs.toFixed(0)} ms]`
+            : `[Process exited with code ${final.exitCode} after ${final.durationMs.toFixed(0)} ms]`)
+        );
+
+        setStatus(
+          final.stopped
+            ? "Run stopped"
+            : final.exitCode === 0
+              ? "Run completed"
+              : `Run failed (${final.exitCode})`
+        );
+      }
+    };
+
+    const unsubscribe = onRunSessionMessage((message) => {
+      const sessionId = runSessionRef.current;
+      if (!sessionId || message.sessionId !== sessionId) return;
+
+      runQueueRef.current.push(message);
+
+      if (runFlushTimerRef.current === null) {
+        runFlushTimerRef.current = window.setTimeout(flushRunOutput, 30);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+
+      if (runFlushTimerRef.current !== null) {
+        window.clearTimeout(runFlushTimerRef.current);
+      }
+    };
+  }, []);
   useEffect(() => {
     const flush = () => {
       traceFlushTimerRef.current = null;
@@ -259,6 +347,13 @@ export default function App() {
     try {
       const selected = await chooseProjectFolder();
       if (!selected) return;
+      const activeRun = runSessionRef.current;
+      if (activeRun) {
+        await stopRunSession(activeRun);
+        runSessionRef.current = null;
+        setRunRunning(false);
+      }
+
       const activeTrace = traceSessionRef.current;
       if (activeTrace) {
         await stopPythonTrace(activeTrace);
@@ -472,6 +567,14 @@ export default function App() {
 
   const runActive = useCallback(async () => {
     if (!activeFile || !projectRoot) return;
+
+    const previousRun = runSessionRef.current;
+    if (previousRun) {
+      await stopRunSession(previousRun);
+      runSessionRef.current = null;
+      setRunRunning(false);
+    }
+
     await saveActive();
 
     setBottomOpen(true);
@@ -499,20 +602,67 @@ export default function App() {
     }
 
     const { plan } = resolution;
-    setOutput(`[${plan.languageName}] ${plan.description}\n> ${plan.command}\n\nRunning...`);
+    const header = `[${plan.languageName}] ${plan.description}\n> ${plan.command}\n\n`;
 
     try {
-      const result = await executeCommand(projectRoot, plan.command);
-      setOutput(
-        `[${plan.languageName}] ${plan.description}\n> ${plan.command}\n\n` +
-        `${result.stdout}${result.stderr ? `\n${result.stderr}` : ""}\n\nExit code: ${result.exitCode}`
-      );
-      setStatus(result.exitCode === 0 ? `${plan.languageName} run completed` : `${plan.languageName} run failed (${result.exitCode})`);
+      const session = await prepareRunSession(projectRoot, plan.command);
+
+      runSessionRef.current = session.sessionId;
+      setRunRunning(true);
+      setOutput(header);
+      setStatus(`${plan.languageName} running`);
+
+      const started = await beginRunSession(session.sessionId);
+      if (!started) {
+        throw new Error("Run session could not be started.");
+      }
     } catch (error) {
-      setOutput(`[${plan.languageName}] ${plan.description}\n> ${plan.command}\n\n${String(error)}`);
+      const sessionId = runSessionRef.current;
+
+      if (sessionId) {
+        try { await stopRunSession(sessionId); } catch { /* already stopped */ }
+      }
+
+      runSessionRef.current = null;
+      setRunRunning(false);
+      setOutput(`${header}[Run error] ${String(error)}`);
       setStatus(`${plan.languageName} run failed`);
     }
   }, [activeFile, projectRoot, resolveToolchains, saveActive]);
+
+  const stopRun = useCallback(async () => {
+    const sessionId = runSessionRef.current;
+    if (!sessionId) return;
+
+    setStatus("Stopping run...");
+
+    try {
+      await stopRunSession(sessionId);
+    } catch (error) {
+      setStatus(`Stop run failed: ${String(error)}`);
+    }
+  }, []);
+
+  const sendRunInput = useCallback(async (value: string) => {
+    const sessionId = runSessionRef.current;
+    if (!sessionId) return;
+
+    const input = `${value}\n`;
+
+    setOutput((current) =>
+      `${current}${current.endsWith("\n") || !current ? "" : "\n"}> ${value}\n`
+    );
+
+    try {
+      const written = await writeRunSession(sessionId, input);
+
+      if (!written) {
+        setOutput((current) => `${current}[stdin is no longer available]\n`);
+      }
+    } catch (error) {
+      setStatus(`Run input failed: ${String(error)}`);
+    }
+  }, []);
 
   const buildActive = useCallback(async () => {
     if (!activeFile || !projectRoot) return;
@@ -980,7 +1130,7 @@ export default function App() {
             <aside className="explorer-panel empty-project-panel">
               <div className="explorer-heading">
                 <span>EXPLORER</span>
-                <button className="ellipsis-button" type="button" onClick={() => void openProject()} title="Open folder">ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢</button>
+                <button className="ellipsis-button" type="button" onClick={() => void openProject()} title="Open folder">ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢</button>
               </div>
               <div className="empty-project-content">
                 <span>No folder open</span>
@@ -1031,6 +1181,9 @@ export default function App() {
               cwd={terminalCwd}
               onCwdChange={setTerminalCwd}
               output={output}
+              runRunning={runRunning}
+              onStopRun={() => void stopRun()}
+              onRunInput={sendRunInput}
               toolchains={toolchains}
               toolchainsLoading={toolchainsLoading}
               onRefreshToolchains={() => void refreshToolchains()}
@@ -1057,14 +1210,14 @@ export default function App() {
           <section className="overlay-dialog" onMouseDown={(event) => event.stopPropagation()}>
             <header>
               <span>{overlay === "about" ? "About XENRA" : "Keyboard Shortcuts"}</span>
-              <button type="button" onClick={() => setOverlay(null)}>ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â</button>
+              <button type="button" onClick={() => setOverlay(null)}>ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â</button>
             </header>
 
             {overlay === "about" ? (
               <div className="about-body">
                 <strong>XENRA 0.1</strong>
                 <p>Production-grade development and execution environment.</p>
-                <p>Electron ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· React ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Monaco ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· xterm</p>
+                <p>Electron ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· React ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Monaco ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· xterm</p>
               </div>
             ) : (
               <div className="shortcut-table">

@@ -3,6 +3,7 @@ import type { RuntimeTraceEvent, RuntimeTraceResult } from "../runtime/types";
 import type { ToolchainReport } from "../languages/types";
 import ExecutionPanel from "./ExecutionPanel";
 import { CloseIcon } from "./Icons";
+import RunOutputPanel from "./RunOutputPanel";
 import ResizeHandle from "./ResizeHandle";
 import ToolchainsPanel from "./ToolchainsPanel";
 import TerminalPanel from "./TerminalPanel";
@@ -13,6 +14,9 @@ type Props = {
   cwd: string;
   onCwdChange: (cwd: string) => void;
   output: string;
+  runRunning: boolean;
+  onStopRun: () => void;
+  onRunInput: (value: string) => void | Promise<void>;
   toolchains: ToolchainReport | null;
   toolchainsLoading: boolean;
   onRefreshToolchains: () => void;
@@ -35,6 +39,9 @@ export default function BottomPanel({
   cwd,
   onCwdChange,
   output,
+  runRunning,
+  onStopRun,
+  onRunInput,
   toolchains,
   toolchainsLoading,
   onRefreshToolchains,
@@ -94,7 +101,12 @@ export default function BottomPanel({
         </div>
 
         <div className={activeTab === "output" ? "panel-page visible" : "panel-page"}>
-          <pre className="output-view">{output || "Build and run output will appear here."}</pre>
+          <RunOutputPanel
+            output={output}
+            running={runRunning}
+            onStop={onStopRun}
+            onSendInput={onRunInput}
+          />
         </div>
 
         <div className={activeTab === "problems" ? "panel-page visible" : "panel-page"}>

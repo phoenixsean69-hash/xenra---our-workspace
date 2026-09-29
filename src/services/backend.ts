@@ -1,5 +1,6 @@
 import type { CommandResult, FileNode, SearchResult } from "../types";
 import type { ToolchainReport } from "../languages/types";
+import type { RunSessionMessage, RunSessionStart } from "../run/types";
 import type {
   RuntimeTraceMessage,
   RuntimeTraceSessionStart
@@ -47,6 +48,26 @@ export function deletePath(path: string): Promise<void> {
 
 export function executeCommand(cwd: string, command: string): Promise<CommandResult> {
   return bridge().executeCommand(cwd, command);
+}
+
+export function prepareRunSession(cwd: string, command: string): Promise<RunSessionStart> {
+  return bridge().prepareRunSession(cwd, command);
+}
+
+export function beginRunSession(sessionId: string): Promise<boolean> {
+  return bridge().beginRunSession(sessionId);
+}
+
+export function writeRunSession(sessionId: string, input: string): Promise<boolean> {
+  return bridge().writeRunSession(sessionId, input);
+}
+
+export function stopRunSession(sessionId: string): Promise<boolean> {
+  return bridge().stopRunSession(sessionId);
+}
+
+export function onRunSessionMessage(callback: (message: RunSessionMessage) => void): () => void {
+  return bridge().onRunSessionMessage(callback);
 }
 
 export function searchProject(rootPath: string, query: string): Promise<SearchResult[]> {

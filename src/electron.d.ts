@@ -1,5 +1,6 @@
 import type { CommandResult, FileNode, SearchResult } from "./types";
 import type { ToolchainReport } from "./languages/types";
+import type { RunSessionMessage, RunSessionStart } from "./run/types";
 import type {
   RuntimeTraceMessage,
   RuntimeTraceSessionStart
@@ -15,6 +16,11 @@ type XenraDesktopBridge = {
   renamePath(path: string, newPath: string): Promise<void>;
   deletePath(path: string): Promise<void>;
   executeCommand(cwd: string, command: string): Promise<CommandResult>;
+  prepareRunSession(cwd: string, command: string): Promise<RunSessionStart>;
+  beginRunSession(sessionId: string): Promise<boolean>;
+  writeRunSession(sessionId: string, input: string): Promise<boolean>;
+  stopRunSession(sessionId: string): Promise<boolean>;
+  onRunSessionMessage(callback: (message: RunSessionMessage) => void): () => void;
   searchProject(rootPath: string, query: string): Promise<SearchResult[]>;
   gitCommand(cwd: string, args: string[]): Promise<CommandResult>;
   detectToolchains(cwd: string): Promise<ToolchainReport>;

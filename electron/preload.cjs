@@ -10,6 +10,19 @@ const xenraApi = {
   renamePath: (path, newPath) => ipcRenderer.invoke("fs:rename-path", { path, newPath }),
   deletePath: (path) => ipcRenderer.invoke("fs:delete-path", path),
   executeCommand: (cwd, command) => ipcRenderer.invoke("process:execute-command", { cwd, command }),
+  prepareRunSession: (cwd, command) =>
+    ipcRenderer.invoke("process:prepare-run-session", { cwd, command }),
+  beginRunSession: (sessionId) =>
+    ipcRenderer.invoke("process:begin-run-session", { sessionId }),
+  writeRunSession: (sessionId, input) =>
+    ipcRenderer.invoke("process:write-run-session", { sessionId, input }),
+  stopRunSession: (sessionId) =>
+    ipcRenderer.invoke("process:stop-run-session", { sessionId }),
+  onRunSessionMessage: (callback) => {
+    const listener = (_event, message) => callback(message);
+    ipcRenderer.on("process:run-session-message", listener);
+    return () => ipcRenderer.removeListener("process:run-session-message", listener);
+  },
   searchProject: (rootPath, query) => ipcRenderer.invoke("workspace:search-project", { rootPath, query }),
   gitCommand: (cwd, args) => ipcRenderer.invoke("git:run", { cwd, args }),
   detectToolchains: (cwd) => ipcRenderer.invoke("language:detect-toolchains", { cwd }),
