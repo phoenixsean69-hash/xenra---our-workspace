@@ -1386,7 +1386,7 @@ body.xenra-resizing-horizontal * {
   cursor: row-resize !important;
   user-select: none !important;
 }
-/* XENRA FIX 2 ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â execution usability */
+/* XENRA FIX 2 ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â execution usability */
 
 .panel-close-button svg {
   width: 14px;
@@ -2225,7 +2225,7 @@ body.xenra-resizing-horizontal * {
     flex: 1 1 0;
   }
 }
-/* XENRA Welcome v5 â€” flat IDE start page, no gradients */
+/* XENRA Welcome v5 Ã¢â‚¬â€ flat IDE start page, no gradients */
 
 .welcome-screen {
   background: #111214;
@@ -2588,7 +2588,7 @@ body.xenra-resizing-horizontal * {
   }
 }
 
-/* XENRA Welcome v6 — reference layout */
+/* XENRA Welcome v6 â€” reference layout */
 
 .welcome-ref-shell {
   grid-row: 2;
@@ -2665,7 +2665,7 @@ body.xenra-resizing-horizontal * {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: 36px minmax(0, 1fr) 20px;
+  grid-template-rows: 36px minmax(0, 1fr);
   background: #1e1e1e;
 }
 
@@ -3041,28 +3041,7 @@ body.xenra-resizing-horizontal * {
   accent-color: #c79b24;
 }
 
-.welcome-ref-status {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: #181818;
-  border-top: 1px solid #2b2b2b;
-  padding: 0 8px;
-  color: #999999;
-  font-size: 9px;
-}
 
-.welcome-ref-status > div {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.welcome-ref-status svg {
-  width: 12px;
-  height: 12px;
-}
 
 .welcome-ref-sr-only {
   position: absolute;
@@ -3087,4 +3066,73 @@ body.xenra-resizing-horizontal * {
   .welcome-ref-select {
     width: 100%;
   }
+}
+
+/* XENRA Welcome v6C - layout and encoding repair */
+
+.app-shell.welcome-open .workbench {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+.app-shell.welcome-open .welcome-ref-shell {
+  grid-row: 2;
+  height: 100%;
+  min-height: 0;
+  align-self: stretch;
+}
+
+.welcome-ref-editor {
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: 36px minmax(0, 1fr) !important;
+}
+
+.welcome-ref-body {
+  height: 100%;
+  min-height: 0;
+}
+
+.welcome-ref-status {
+  display: none !important;
+}
+
+.welcome-ref-user svg,
+.welcome-ref-gear svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.welcome-ref-tab-close svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.welcome-ref-link-icon svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.welcome-ref-select-arrow {
+  top: 50%;
+  right: 11px;
+  width: 7px;
+  height: 7px;
+  border-right: 1px solid #9a9a9a;
+  border-bottom: 1px solid #9a9a9a;
+  transform: translateY(-70%) rotate(45deg);
 }

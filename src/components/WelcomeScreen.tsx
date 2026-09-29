@@ -7,8 +7,7 @@ import {
   BranchIcon,
   CodeIcon,
   PlayIcon,
-  SearchIcon,
-  TerminalIcon
+  SearchIcon
 } from "./Icons";
 
 type Props = {
@@ -39,7 +38,7 @@ function compactPath(path: string) {
   const parts = normalized.split("/").filter(Boolean);
 
   if (parts.length <= 4) return normalized;
-  return `…/${parts.slice(-4).join("/")}`;
+  return `.../${parts.slice(-4).join("/")}`;
 }
 
 function ModeGlyph({ mode }: { mode: WorkspaceMode }) {
@@ -92,6 +91,58 @@ function ExtensionGlyph() {
   );
 }
 
+function UserGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="8" r="3.25" />
+      <path d="M5.5 20c.8-4 3-6 6.5-6s5.7 2 6.5 6" />
+    </svg>
+  );
+}
+
+function SettingsGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" />
+    </svg>
+  );
+}
+
+function CloseGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M4 4l8 8M12 4l-8 8" />
+    </svg>
+  );
+}
+
+function FolderGlyph() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M2.5 5.5h5l1.5 2h8.5v8H2.5z" />
+    </svg>
+  );
+}
+
+function ResumeGlyph() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M5 10a5 5 0 1 1 1.4 3.5" />
+      <path d="M5 6v4h4" />
+    </svg>
+  );
+}
+
+function OpenGlyph() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M4 3.5h7l2 2h3v11H4z" />
+      <path d="M8 10h6M11 7l3 3-3 3" />
+    </svg>
+  );
+}
+
 export default function WelcomeScreen({
   mode,
   languageId,
@@ -128,8 +179,8 @@ export default function WelcomeScreen({
         </div>
 
         <div className="welcome-ref-rail-bottom">
-          <span className="welcome-ref-user">◎</span>
-          <span className="welcome-ref-gear">⚙</span>
+          <span className="welcome-ref-user"><UserGlyph /></span>
+          <span className="welcome-ref-gear"><SettingsGlyph /></span>
         </div>
       </aside>
 
@@ -146,7 +197,7 @@ export default function WelcomeScreen({
                 aria-label="Close Welcome"
                 title="Close Welcome"
               >
-                ×
+                <CloseGlyph />
               </button>
             )}
           </div>
@@ -167,19 +218,19 @@ export default function WelcomeScreen({
                   <div className="welcome-ref-links">
                     {currentProject && (
                       <button type="button" onClick={onResume}>
-                        <span className="welcome-ref-link-icon">↗</span>
+                        <span className="welcome-ref-link-icon"><ResumeGlyph /></span>
                         <span>Resume Workspace</span>
                       </button>
                     )}
 
                     <button type="button" onClick={onOpenFolder}>
-                      <span className="welcome-ref-link-icon">⌑</span>
+                      <span className="welcome-ref-link-icon"><OpenGlyph /></span>
                       <span>Open Folder...</span>
                     </button>
 
                     {!currentProject && lastProject && (
                       <button type="button" onClick={onContinueLast}>
-                        <span className="welcome-ref-link-icon">↶</span>
+                        <span className="welcome-ref-link-icon"><ResumeGlyph /></span>
                         <span>Continue Last Workspace</span>
                       </button>
                     )}
@@ -262,7 +313,7 @@ export default function WelcomeScreen({
                         </option>
                       ))}
                     </select>
-                    <span className="welcome-ref-select-arrow">⌄</span>
+                    <span className="welcome-ref-select-arrow" aria-hidden="true" />
                   </label>
                 </section>
               </div>
@@ -278,18 +329,6 @@ export default function WelcomeScreen({
             <span>Show welcome page on startup</span>
           </label>
         </div>
-
-        <footer className="welcome-ref-status">
-          <div>
-            <span>XENRA</span>
-            <span>{mode.toUpperCase()}</span>
-            <span>{selectedLanguage?.name ?? "AUTO"}</span>
-          </div>
-          <div>
-            <TerminalIcon />
-            <span>Ready</span>
-          </div>
-        </footer>
       </section>
     </main>
   );
