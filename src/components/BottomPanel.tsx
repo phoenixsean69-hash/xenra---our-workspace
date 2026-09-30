@@ -1,8 +1,10 @@
+import type { EditorProblem } from "../editor/types";
 import type { BottomPanelTab } from "../types";
 import type { RuntimeTraceEvent, RuntimeTraceResult } from "../runtime/types";
 import type { ToolchainReport } from "../languages/types";
 import ExecutionPanel from "./ExecutionPanel";
 import { CloseIcon } from "./Icons";
+import ProblemsPanel from "./ProblemsPanel";
 import RunOutputPanel from "./RunOutputPanel";
 import ResizeHandle from "./ResizeHandle";
 import ToolchainsPanel from "./ToolchainsPanel";
@@ -26,6 +28,8 @@ type Props = {
   maxPanelHeight: () => number;
   defaultPanelHeight: number;
   onPanelHeightChange: (height: number) => void;
+  problems: EditorProblem[];
+  onOpenProblem: (problem: EditorProblem) => void;
   traceResult: RuntimeTraceResult | null;
   traceRunning: boolean;
   onTraceAgain: () => void;
@@ -52,6 +56,8 @@ export default function BottomPanel({
   maxPanelHeight,
   defaultPanelHeight,
   onPanelHeightChange,
+  problems,
+  onOpenProblem,
   traceResult,
   traceRunning,
   onTraceAgain,
@@ -80,7 +86,9 @@ export default function BottomPanel({
             className={activeTab === tab ? "active" : ""}
             onClick={() => onTabChange(tab)}
           >
-            {tab.toUpperCase()}
+            {tab === "problems" && problems.length
+              ? `PROBLEMS ${problems.length}`
+              : tab.toUpperCase()}
           </button>
         ))}
 
@@ -112,7 +120,7 @@ export default function BottomPanel({
         </div>
 
         <div className={activeTab === "problems" ? "panel-page visible" : "panel-page"}>
-          <div className="problems-empty">No problems reported.</div>
+          <ProblemsPanel problems={problems} onOpenProblem={onOpenProblem} />
         </div>
 
         <div className={activeTab === "toolchains" ? "panel-page visible" : "panel-page"}>

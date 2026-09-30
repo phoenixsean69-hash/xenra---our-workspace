@@ -828,6 +828,15 @@ function registerIpc() {
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
 
+  ipcMain.handle("workspace:choose-directory", async (_event, { defaultPath } = {}) => {
+    const result = await dialog.showOpenDialog({
+      title: "Pick target directory",
+      defaultPath: typeof defaultPath === "string" && defaultPath ? defaultPath : undefined,
+      properties: ["openDirectory", "createDirectory"]
+    });
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  });
+
   ipcMain.handle("fs:list-directory", async (_event, targetPath) => {
     try {
       const entries = await fs.readdir(targetPath, { withFileTypes: true });

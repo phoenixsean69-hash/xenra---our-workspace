@@ -8,6 +8,7 @@ import type {
 
 type XenraDesktopBridge = {
   chooseProjectFolder(): Promise<string | null>;
+  chooseDirectory(defaultPath?: string | null): Promise<string | null>;
   listDirectory(path: string): Promise<FileNode[]>;
   readTextFile(path: string): Promise<string>;
   writeTextFile(path: string, content: string): Promise<void>;

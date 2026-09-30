@@ -5,6 +5,7 @@ import jsonWorker from "monaco-editor/language/json/json.worker?worker";
 import cssWorker from "monaco-editor/language/css/css.worker?worker";
 import htmlWorker from "monaco-editor/language/html/html.worker?worker";
 import tsWorker from "monaco-editor/language/typescript/ts.worker?worker";
+import type { EditorProblem, EditorProblemSeverity } from "../editor/types";
 import type { OpenFile } from "../types";
 
 (self as any).MonacoEnvironment = {
@@ -23,9 +24,52 @@ type Props = {
   file: OpenFile | null;
   onChange: (value: string) => void;
   onSave: () => void;
+  onProblemsChange: (problems: EditorProblem[]) => void;
 };
 
-export default function CodeEditor({ file, onChange, onSave }: Props) {
+function severityFromMarker(value: monaco.MarkerSeverity): EditorProblemSeverity {
+  if (value === monaco.MarkerSeverity.Error) return "error";
+  if (value === monaco.MarkerSeverity.Warning) return "warning";
+  if (value === monaco.MarkerSeverity.Info) return "info";
+  return "hint";
+}
+
+function collectProblems(): EditorProblem[] {
+  return monaco.editor.getModelMarkers({}).map((marker) => ({
+    owner: marker.owner,
+    path: marker.resource.fsPath || marker.resource.path || marker.resource.toString(),
+    message: marker.message,
+    severity: severityFromMarker(marker.severity),
+    startLine: marker.startLineNumber,
+    startColumn: marker.startColumn,
+    endLine: marker.endLineNumber,
+    endColumn: marker.endColumn,
+    code: marker.code === undefined
+      ? undefined
+      : typeof marker.code === "string"
+        ? marker.code
+        : String(marker.code.value)
+  }));
+}
+
+function configureLanguageServices() {
+  const diagnostics = {
+    noSemanticValidation: false,
+    noSyntaxValidation: false
+  };
+
+  monaco.typescript.typescriptDefaults.setEagerModelSync(true);
+  monaco.typescript.javascriptDefaults.setEagerModelSync(true);
+  monaco.typescript.typescriptDefaults.setDiagnosticsOptions(diagnostics);
+  monaco.typescript.javascriptDefaults.setDiagnosticsOptions(diagnostics);
+}
+
+export default function CodeEditor({
+  file,
+  onChange,
+  onSave,
+  onProblemsChange
+}: Props) {
   if (!file) {
     return <div className="empty-editor" aria-label="No file open" />;
   }
@@ -37,6 +81,8 @@ export default function CodeEditor({ file, onChange, onSave }: Props) {
       value={file.content}
       theme="xenra-diamond"
       beforeMount={(monacoApi) => {
+        configureLanguageServices();
+
         monacoApi.editor.defineTheme("xenra-diamond", {
           base: "vs-dark",
           inherit: true,
@@ -87,6 +133,13 @@ export default function CodeEditor({ file, onChange, onSave }: Props) {
         editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, onSave);
 
         let minimapEnabled = true;
+
+        const publishProblems = () => {
+          onProblemsChange(collectProblems());
+        };
+
+        publishProblems();
+        const markerSubscription = monaco.editor.onDidChangeMarkers(publishProblems);
 
         const onEditorAction = (event: Event) => {
           const action = (event as CustomEvent<{ action: string; line?: number; column?: number }>).detail;
@@ -145,6 +198,7 @@ export default function CodeEditor({ file, onChange, onSave }: Props) {
 
         window.addEventListener("xenra:editor-action", onEditorAction);
         editor.onDidDispose(() => {
+          markerSubscription.dispose();
           window.removeEventListener("xenra:editor-action", onEditorAction);
         });
 
@@ -165,7 +219,25 @@ export default function CodeEditor({ file, onChange, onSave }: Props) {
         cursorBlinking: "smooth",
         cursorSmoothCaretAnimation: "on",
         fontLigatures: true,
-        tabSize: 2
+        tabSize: 2,
+        glyphMargin: true,
+        folding: true,
+        showFoldingControls: "mouseover",
+        stickyScroll: { enabled: true },
+        quickSuggestions: { other: true, comments: false, strings: true },
+        suggestOnTriggerCharacters: true,
+        acceptSuggestionOnCommitCharacter: true,
+        acceptSuggestionOnEnter: "on",
+        tabCompletion: "on",
+        snippetSuggestions: "inline",
+        parameterHints: { enabled: true, cycle: true },
+        hover: { enabled: "on", delay: 250, sticky: true },
+        codeLens: true,
+        links: true,
+        inlayHints: { enabled: "on" },
+        "semanticHighlighting.enabled": true,
+        formatOnPaste: true,
+        formatOnType: true
       }}
     />
   );

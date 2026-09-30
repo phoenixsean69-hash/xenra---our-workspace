@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { LANGUAGE_REGISTRY } from "../languages/registry";
 import type { ToolchainReport } from "../languages/types";
 import {
@@ -27,12 +28,61 @@ type Props = {
   onOpenFolder: () => void;
   onContinueLast: () => void;
   onResume: () => void;
+  onCreateFile: (
+    fileName: string,
+    targetDirectory?: string | null
+  ) => Promise<{ ok: boolean; message: string }>;
+  onPickDirectory: (defaultPath?: string | null) => Promise<string | null>;
   onShowOnStartupChange: (value: boolean) => void;
 };
 
 const languages = LANGUAGE_REGISTRY.filter(
   (language) => language.category === "programming"
 );
+
+const LANGUAGE_BADGES: Record<string, string> = {
+  auto: "A",
+  python: "Py",
+  javascript: "JS",
+  typescript: "TS",
+  c: "C",
+  cpp: "C++",
+  java: "J",
+  csharp: "C#",
+  go: "Go",
+  rust: "Rs",
+  php: "PHP",
+  ruby: "Rb",
+  powershell: ">_",
+  shell: "$",
+  assembly: "ASM"
+};
+
+const DEFAULT_FILE_NAMES: Record<string, string> = {
+  auto: "untitled.txt",
+  python: "main.py",
+  javascript: "main.js",
+  typescript: "main.ts",
+  c: "main.c",
+  cpp: "main.cpp",
+  java: "Main.java",
+  csharp: "Program.cs",
+  go: "main.go",
+  rust: "main.rs",
+  php: "index.php",
+  ruby: "main.rb",
+  powershell: "script.ps1",
+  shell: "script.sh",
+  assembly: "main.asm"
+};
+
+function LanguageBadge({ id }: { id: string }) {
+  return (
+    <span className={`welcome-language-badge welcome-language-badge--${id}`} aria-hidden="true">
+      {LANGUAGE_BADGES[id] ?? "TXT"}
+    </span>
+  );
+}
 
 function workspaceName(path: string) {
   const normalized = path.replace(/\\/g, "/");
@@ -149,6 +199,15 @@ function OpenGlyph() {
   );
 }
 
+function NewFileGlyph() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M4 2.5h7l4 4v11H4z" />
+      <path d="M11 2.5v4h4M9.5 10v5M7 12.5h5" />
+    </svg>
+  );
+}
+
 export default function WelcomeScreen({
   mode,
   languageId,
@@ -165,8 +224,58 @@ export default function WelcomeScreen({
   onOpenFolder,
   onContinueLast,
   onResume,
+  onCreateFile,
+  onPickDirectory,
   onShowOnStartupChange
 }: Props) {
+  const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
+  const [newFileOpen, setNewFileOpen] = useState(false);
+  const [newFileName, setNewFileName] = useState("");
+  const [newFileError, setNewFileError] = useState("");
+  const [newFileDirectory, setNewFileDirectory] = useState<string | null>(null);
+  const [creatingFile, setCreatingFile] = useState(false);
+  const languageMenuRef = useRef<HTMLDivElement | null>(null);
+  const newFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!languageMenuOpen) return;
+
+    const onPointerDown = (event: MouseEvent) => {
+      if (
+        languageMenuRef.current &&
+        event.target instanceof Node &&
+        !languageMenuRef.current.contains(event.target)
+      ) {
+        setLanguageMenuOpen(false);
+      }
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setLanguageMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [languageMenuOpen]);
+
+  useEffect(() => {
+    if (!newFileOpen) return;
+
+    const frame = requestAnimationFrame(() => {
+      newFileInputRef.current?.focus();
+      newFileInputRef.current?.select();
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [newFileOpen]);
+
   const selectedLanguage = languageId === "auto"
     ? null
     : languages.find((language) => language.id === languageId) ?? null;
@@ -213,6 +322,63 @@ export default function WelcomeScreen({
     : lastProject
       ? onContinueLast
       : null;
+
+  const beginNewFile = () => {
+    setNewFileName(DEFAULT_FILE_NAMES[languageId] ?? "untitled.txt");
+    setNewFileDirectory(null);
+    setNewFileError("");
+    setNewFileOpen(true);
+  };
+
+  const cancelNewFile = () => {
+    if (creatingFile) return;
+    setNewFileOpen(false);
+    setNewFileError("");
+  };
+
+  const submitNewFile = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (creatingFile) return;
+
+    setCreatingFile(true);
+    setNewFileError("");
+
+    try {
+      const result = await onCreateFile(newFileName, newFileDirectory);
+      if (!result.ok) {
+        setNewFileError(result.message);
+        return;
+      }
+
+      setNewFileOpen(false);
+    } finally {
+      setCreatingFile(false);
+    }
+  };
+
+  const chooseLanguage = (id: string) => {
+    onLanguageChange(id);
+    setLanguageMenuOpen(false);
+
+    if (newFileOpen) {
+      setNewFileName(DEFAULT_FILE_NAMES[id] ?? "untitled.txt");
+      setNewFileError("");
+    }
+  };
+
+  const pickNewFileDirectory = async () => {
+    const picked = await onPickDirectory(
+      newFileDirectory ?? currentProject ?? lastProject
+    );
+
+    if (picked) {
+      setNewFileDirectory(picked);
+      setNewFileError("");
+    }
+  };
+
+  const effectiveNewFileDirectory =
+    newFileDirectory ?? currentProject ?? lastProject;
 
   return (
     <main className="welcome-ref-shell">
@@ -263,6 +429,70 @@ export default function WelcomeScreen({
                   <h2>Start</h2>
 
                   <div className="welcome-ref-links">
+                    <button type="button" onClick={beginNewFile}>
+                      <span className="welcome-ref-link-icon"><NewFileGlyph /></span>
+                      <span>New File...</span>
+                    </button>
+
+                    {newFileOpen && (
+                      <form className="welcome-new-file-form" onSubmit={(event) => void submitNewFile(event)}>
+                        <div className="welcome-new-file-row">
+                          <LanguageBadge id={languageId} />
+                          <input
+                            ref={newFileInputRef}
+                            value={newFileName}
+                            onChange={(event) => {
+                              setNewFileName(event.target.value);
+                              setNewFileError("");
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Escape") {
+                                event.preventDefault();
+                                cancelNewFile();
+                              }
+                            }}
+                            placeholder="file name"
+                            spellCheck={false}
+                            disabled={creatingFile}
+                            aria-label="New file name"
+                          />
+                          <button type="submit" className="welcome-new-file-create" disabled={creatingFile}>
+                            {creatingFile ? "Creating..." : "Create"}
+                          </button>
+                          <button
+                            type="button"
+                            className="welcome-new-file-cancel"
+                            onClick={cancelNewFile}
+                            disabled={creatingFile}
+                            aria-label="Cancel new file"
+                          >
+                            x
+                          </button>
+                        </div>
+
+                        <div className="welcome-new-file-directory">
+                          <button
+                            type="button"
+                            className="welcome-new-file-pick-dir"
+                            onClick={() => void pickNewFileDirectory()}
+                            disabled={creatingFile}
+                          >
+                            Pick dir
+                          </button>
+
+                          <small
+                            className={newFileError ? "welcome-new-file-note error" : "welcome-new-file-note"}
+                            title={effectiveNewFileDirectory ?? undefined}
+                          >
+                            {newFileError ||
+                              (effectiveNewFileDirectory
+                                ? `Create in ${compactPath(effectiveNewFileDirectory)}`
+                                : "No target directory selected")}
+                          </small>
+                        </div>
+                      </form>
+                    )}
+
                     {currentProject && (
                       <button type="button" onClick={onResume}>
                         <span className="welcome-ref-link-icon"><ResumeGlyph /></span>
@@ -384,21 +614,58 @@ export default function WelcomeScreen({
                     <span>{selectedLanguage?.name ?? "Auto-detect"}</span>
                   </div>
 
-                  <label className="welcome-ref-select">
-                    <span className="welcome-ref-sr-only">Preferred Language</span>
-                    <select
-                      value={languageId}
-                      onChange={(event) => onLanguageChange(event.target.value)}
+                  <div className="welcome-language-picker" ref={languageMenuRef}>
+                    <button
+                      type="button"
+                      className="welcome-language-trigger"
+                      aria-haspopup="listbox"
+                      aria-expanded={languageMenuOpen}
+                      onClick={() => setLanguageMenuOpen((value) => !value)}
                     >
-                      <option value="auto">Auto-detect</option>
-                      {languages.map((language) => (
-                        <option value={language.id} key={language.id}>
-                          {language.name}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="welcome-ref-select-arrow" aria-hidden="true" />
-                  </label>
+                      <LanguageBadge id={languageId} />
+                      <span className="welcome-language-trigger-name">
+                        {selectedLanguage?.name ?? "Auto-detect"}
+                      </span>
+                      <span className="welcome-ref-select-arrow" aria-hidden="true" />
+                    </button>
+
+                    {languageMenuOpen && (
+                      <div className="welcome-language-menu" role="listbox" aria-label="Preferred Language">
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={languageId === "auto"}
+                          className={languageId === "auto" ? "selected" : ""}
+                          onClick={() => chooseLanguage("auto")}
+                        >
+                          <LanguageBadge id="auto" />
+                          <span>
+                            <strong>Auto-detect</strong>
+                            <small>Choose language per file</small>
+                          </span>
+                        </button>
+
+                        {languages.map((language) => (
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={languageId === language.id}
+                            className={languageId === language.id ? "selected" : ""}
+                            key={language.id}
+                            onClick={() => chooseLanguage(language.id)}
+                          >
+                            <LanguageBadge id={language.id} />
+                            <span>
+                              <strong>{language.name}</strong>
+                              <small>
+                                {language.extensions.slice(0, 3).map((extension) => `.${extension}`).join("  ")}
+                              </small>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </section>
               </div>
             </div>

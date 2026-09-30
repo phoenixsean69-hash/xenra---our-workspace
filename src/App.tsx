@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
+import type { EditorProblem } from "./editor/types";
 import type { BottomPanelTab, FileNode, OpenFile, SearchResult, SidebarView } from "./types";
 import type { RuntimeTraceEvent, RuntimeTraceMessage, RuntimeTraceResult } from "./runtime/types";
 import type { RunSessionMessage } from "./run/types";
@@ -7,7 +8,9 @@ import {
   beginPythonTrace,
   beginRunSession,
   chooseProjectFolder,
+  chooseDirectory,
   closeWindow,
+  createFile,
   detectToolchains,
   executeCommand,
   onPythonTraceMessage,
@@ -152,6 +155,7 @@ export default function App() {
   const [runRunning, setRunRunning] = useState(false);
   const [toolchains, setToolchains] = useState<ToolchainReport | null>(null);
   const [toolchainsLoading, setToolchainsLoading] = useState(false);
+  const [editorProblems, setEditorProblems] = useState<EditorProblem[]>([]);
   const [status, setStatus] = useState("Ready");
   const [treeRevision, setTreeRevision] = useState(0);
   const [overlay, setOverlay] = useState<"about" | "shortcuts" | null>(null);
@@ -570,6 +574,74 @@ export default function App() {
       { line, column }
     );
   }, [openFile]);
+
+  const createWelcomeFile = useCallback(async (
+    requestedName: string,
+    targetDirectory?: string | null
+  ) => {
+    const name = requestedName.trim();
+
+    if (!name) {
+      return { ok: false, message: "Enter a file name." };
+    }
+
+    if (
+      name === "." ||
+      name === ".." ||
+      /[<>:"/\\|?*\u0000-\u001F]/.test(name) ||
+      /[. ]$/.test(name)
+    ) {
+      return { ok: false, message: "Use a valid Windows file name without path separators." };
+    }
+
+    const reservedBase = name.split(".")[0]?.toUpperCase() ?? "";
+    if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(reservedBase)) {
+      return { ok: false, message: "That file name is reserved by Windows." };
+    }
+
+    let targetRoot = targetDirectory ?? projectRoot ?? lastProject;
+
+    if (!targetRoot) {
+      try {
+        targetRoot = await chooseProjectFolder();
+      } catch (error) {
+        return { ok: false, message: `Folder selection failed: ${String(error)}` };
+      }
+    }
+
+    if (!targetRoot) {
+      return { ok: false, message: "Choose a workspace folder first." };
+    }
+
+    const targetPath = joinPath(targetRoot, name);
+
+    try {
+      await createFile(targetPath);
+
+      if (projectRoot === targetRoot) {
+        resumeWorkspace();
+      } else {
+        await activateProject(targetRoot);
+      }
+
+      setTreeRevision((value) => value + 1);
+      await openAbsolutePath(targetPath);
+      setActiveView("explorer");
+      setStatus(`Created ${name}`);
+
+      return { ok: true, message: `Created ${name}` };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(`Create file failed: ${message}`);
+      return { ok: false, message };
+    }
+  }, [
+    activateProject,
+    lastProject,
+    openAbsolutePath,
+    projectRoot,
+    resumeWorkspace
+  ]);
 
   const changeActiveContent = (content: string) => {
     if (!activePath) return;
@@ -1241,6 +1313,8 @@ export default function App() {
           onOpenFolder={() => void openProject()}
           onContinueLast={() => void continueLastProject()}
           onResume={resumeWorkspace}
+          onCreateFile={createWelcomeFile}
+          onPickDirectory={(defaultPath) => chooseDirectory(defaultPath)}
           onShowOnStartupChange={(value) => {
             setShowWelcomeOnStartup(value);
             localStorage.setItem(WELCOME_ON_STARTUP_KEY, value ? "true" : "false");
@@ -1359,7 +1433,12 @@ export default function App() {
           />
 
           <div className="editor-area">
-            <CodeEditor file={activeFile} onChange={changeActiveContent} onSave={saveActive} />
+            <CodeEditor
+              file={activeFile}
+              onChange={changeActiveContent}
+              onSave={saveActive}
+              onProblemsChange={setEditorProblems}
+            />
           </div>
 
           {bottomOpen && projectRoot && (
@@ -1381,6 +1460,10 @@ export default function App() {
               maxPanelHeight={getBottomPanelMax}
               defaultPanelHeight={BOTTOM_PANEL_DEFAULT_HEIGHT}
               onPanelHeightChange={setBottomPanelHeight}
+              problems={editorProblems}
+              onOpenProblem={(problem) => {
+                void openAbsolutePath(problem.path, problem.startLine, problem.startColumn);
+              }}
               traceResult={traceResult}
               traceRunning={traceRunning}
               onTraceAgain={() => void traceActive()}

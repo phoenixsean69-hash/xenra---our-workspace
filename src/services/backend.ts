@@ -18,6 +18,10 @@ export function chooseProjectFolder(): Promise<string | null> {
   return bridge().chooseProjectFolder();
 }
 
+export function chooseDirectory(defaultPath?: string | null): Promise<string | null> {
+  return bridge().chooseDirectory(defaultPath);
+}
+
 export function listDirectory(path: string): Promise<FileNode[]> {
   return bridge().listDirectory(path);
 }

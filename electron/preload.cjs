@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 const xenraApi = {
   chooseProjectFolder: () => ipcRenderer.invoke("workspace:choose-project-folder"),
+  chooseDirectory: (defaultPath) =>
+    ipcRenderer.invoke("workspace:choose-directory", { defaultPath }),
   listDirectory: (path) => ipcRenderer.invoke("fs:list-directory", path),
   readTextFile: (path) => ipcRenderer.invoke("fs:read-text-file", path),
   writeTextFile: (path, content) => ipcRenderer.invoke("fs:write-text-file", { path, content }),
