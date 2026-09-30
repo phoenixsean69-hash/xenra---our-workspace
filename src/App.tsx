@@ -1205,7 +1205,9 @@ export default function App() {
                 onClick={() => setWelcomeOpen(true)}
                 title="Change workspace mode or language"
               >
-                $1<span>/</span>$2
+                <span>{workspaceModeLabel(workspaceMode)}</span>
+                <span>/</span>
+                <span>{preferredLanguage?.name ?? "Auto"}</span>
               </button>
 
               <span className="title-status" title={status}>{status}</span>
@@ -1229,6 +1231,11 @@ export default function App() {
           currentProject={projectRoot}
           lastProject={lastProject}
           showOnStartup={showWelcomeOnStartup}
+          toolchains={toolchains}
+          toolchainsLoading={toolchainsLoading}
+          runRunning={runRunning}
+          traceRunning={traceRunning}
+          traceEventCount={traceResult?.events.length ?? 0}
           onModeChange={setWorkspaceMode}
           onLanguageChange={setPreferredLanguageId}
           onOpenFolder={() => void openProject()}

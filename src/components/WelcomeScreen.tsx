@@ -1,4 +1,5 @@
 import { LANGUAGE_REGISTRY } from "../languages/registry";
+import type { ToolchainReport } from "../languages/types";
 import {
   WORKSPACE_MODE_OPTIONS,
   type WorkspaceMode
@@ -16,6 +17,11 @@ type Props = {
   currentProject: string | null;
   lastProject: string | null;
   showOnStartup: boolean;
+  toolchains: ToolchainReport | null;
+  toolchainsLoading: boolean;
+  runRunning: boolean;
+  traceRunning: boolean;
+  traceEventCount: number;
   onModeChange: (mode: WorkspaceMode) => void;
   onLanguageChange: (languageId: string) => void;
   onOpenFolder: () => void;
@@ -149,6 +155,11 @@ export default function WelcomeScreen({
   currentProject,
   lastProject,
   showOnStartup,
+  toolchains,
+  toolchainsLoading,
+  runRunning,
+  traceRunning,
+  traceEventCount,
   onModeChange,
   onLanguageChange,
   onOpenFolder,
@@ -159,6 +170,42 @@ export default function WelcomeScreen({
   const selectedLanguage = languageId === "auto"
     ? null
     : languages.find((language) => language.id === languageId) ?? null;
+
+  const detectedToolchains = toolchains?.tools.filter((tool) => tool.available).length ?? 0;
+  const selectedToolchainIds = selectedLanguage?.toolchains ?? [];
+  const selectedDetectedToolchains = selectedToolchainIds.filter((id) =>
+    toolchains?.tools.some((tool) => tool.id === id && tool.available)
+  ).length;
+
+  const liveRunState = runRunning
+    ? "RUNNING"
+    : selectedLanguage
+      ? selectedLanguage.runnable
+        ? "READY"
+        : "EDITOR ONLY"
+      : "PER FILE";
+
+  const observationState = traceRunning
+    ? "TRACING"
+    : languageId === "python"
+      ? "LIVE TRACE READY"
+      : languageId === "auto"
+        ? "PYTHON TRACE READY"
+        : "PYTHON TRACE ONLY";
+
+  const toolchainState = toolchainsLoading
+    ? "SCANNING"
+    : toolchains
+      ? selectedLanguage && selectedToolchainIds.length
+        ? `${selectedDetectedToolchains}/${selectedToolchainIds.length} TOOLS`
+        : `${detectedToolchains}/${toolchains.tools.length} DETECTED`
+      : currentProject
+        ? "NOT SCANNED"
+        : "OPEN WORKSPACE";
+
+  const lastTraceState = traceEventCount > 0
+    ? `${traceEventCount.toLocaleString()} EVENTS`
+    : "NO TRACE YET";
 
   const recentPath = currentProject ?? lastProject;
   const closeWelcome = currentProject
@@ -259,6 +306,43 @@ export default function WelcomeScreen({
                       to start.
                     </p>
                   )}
+                </section>
+
+                <section className="welcome-ref-section welcome-ref-lens">
+                  <div className="welcome-ref-lens-heading">
+                    <h2>Execution Lens</h2>
+                    <span>XENRA</span>
+                  </div>
+
+                  <div className="welcome-ref-lens-rows">
+                    <div className="welcome-ref-lens-row">
+                      <span>Live Run</span>
+                      <strong className={runRunning ? "active" : "ready"}>
+                        {liveRunState}
+                      </strong>
+                    </div>
+
+                    <div className="welcome-ref-lens-row">
+                      <span>Runtime Observation</span>
+                      <strong className={traceRunning ? "active" : languageId === "python" || languageId === "auto" ? "ready" : "muted"}>
+                        {observationState}
+                      </strong>
+                    </div>
+
+                    <div className="welcome-ref-lens-row">
+                      <span>Toolchains</span>
+                      <strong className={toolchainsLoading ? "active" : toolchains ? "ready" : "muted"}>
+                        {toolchainState}
+                      </strong>
+                    </div>
+
+                    <div className="welcome-ref-lens-row">
+                      <span>Last Trace</span>
+                      <strong className={traceEventCount > 0 ? "ready" : "muted"}>
+                        {lastTraceState}
+                      </strong>
+                    </div>
+                  </div>
                 </section>
               </div>
 
