@@ -12,6 +12,10 @@ export type MenuAction =
   | "edit.copy"
   | "edit.paste"
   | "edit.find"
+  | "edit.suggest"
+  | "edit.quickFix"
+  | "edit.rename"
+  | "edit.format"
   | "selection.all"
   | "selection.line"
   | "selection.cursorAbove"
@@ -22,6 +26,8 @@ export type MenuAction =
   | "view.panel"
   | "view.minimap"
   | "go.line"
+  | "go.definition"
+  | "go.references"
   | "go.nextEditor"
   | "go.previousEditor"
   | "run.current"
@@ -84,7 +90,12 @@ export default function MenuBar({ onAction, hasProject, hasActiveFile, hasOpenFi
         { label: "Copy", action: "edit.copy", shortcut: "Ctrl+C", disabled: !hasActiveFile },
         { label: "Paste", action: "edit.paste", shortcut: "Ctrl+V", disabled: !hasActiveFile },
         { separator: true, label: "" },
-        { label: "Find", action: "edit.find", shortcut: "Ctrl+F", disabled: !hasActiveFile }
+        { label: "Find", action: "edit.find", shortcut: "Ctrl+F", disabled: !hasActiveFile },
+        { separator: true, label: "" },
+        { label: "Trigger Suggestions", action: "edit.suggest", shortcut: "Ctrl+Space", disabled: !hasActiveFile },
+        { label: "Quick Fix", action: "edit.quickFix", shortcut: "Ctrl+.", disabled: !hasActiveFile },
+        { label: "Rename Symbol", action: "edit.rename", shortcut: "F2", disabled: !hasActiveFile },
+        { label: "Format Document", action: "edit.format", shortcut: "Shift+Alt+F", disabled: !hasActiveFile }
       ]
     },
     {
@@ -93,8 +104,8 @@ export default function MenuBar({ onAction, hasProject, hasActiveFile, hasOpenFi
         { label: "Select All", action: "selection.all", shortcut: "Ctrl+A", disabled: !hasActiveFile },
         { label: "Select Line", action: "selection.line", disabled: !hasActiveFile },
         { separator: true, label: "" },
-        { label: "Add Cursor Above", action: "selection.cursorAbove", shortcut: "Ctrl+Alt+ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Ëœ", disabled: !hasActiveFile },
-        { label: "Add Cursor Below", action: "selection.cursorBelow", shortcut: "Ctrl+Alt+ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Å“", disabled: !hasActiveFile }
+        { label: "Add Cursor Above", action: "selection.cursorAbove", shortcut: "Ctrl+Alt+Up", disabled: !hasActiveFile },
+        { label: "Add Cursor Below", action: "selection.cursorBelow", shortcut: "Ctrl+Alt+Down", disabled: !hasActiveFile }
       ]
     },
     {
@@ -112,6 +123,8 @@ export default function MenuBar({ onAction, hasProject, hasActiveFile, hasOpenFi
       name: "Go",
       items: [
         { label: "Go to Line...", action: "go.line", shortcut: "Ctrl+G", disabled: !hasActiveFile },
+        { label: "Go to Definition", action: "go.definition", shortcut: "F12", disabled: !hasActiveFile },
+        { label: "Find References", action: "go.references", shortcut: "Shift+F12", disabled: !hasActiveFile },
         { separator: true, label: "" },
         { label: "Next Editor", action: "go.nextEditor", shortcut: "Ctrl+PageDown", disabled: !hasOpenFiles },
         { label: "Previous Editor", action: "go.previousEditor", shortcut: "Ctrl+PageUp", disabled: !hasOpenFiles }

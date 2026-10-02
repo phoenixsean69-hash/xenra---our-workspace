@@ -5,6 +5,10 @@ import type {
   RuntimeTraceMessage,
   RuntimeTraceSessionStart
 } from "../runtime/types";
+import type {
+  LspServerEvent,
+  LspServerStart
+} from "../lsp/types";
 
 function bridge() {
   const api = window.xenra ?? window.university;
@@ -100,6 +104,30 @@ export function stopPythonTrace(sessionId: string): Promise<boolean> {
 
 export function onPythonTraceMessage(callback: (message: RuntimeTraceMessage) => void): () => void {
   return bridge().onPythonTraceMessage(callback);
+}
+
+export function startLanguageServer(
+  serviceId: string,
+  workspaceRoot: string
+): Promise<LspServerStart> {
+  return bridge().startLanguageServer(serviceId, workspaceRoot);
+}
+
+export function sendLanguageServerMessage(
+  sessionId: string,
+  message: unknown
+): Promise<boolean> {
+  return bridge().sendLanguageServerMessage(sessionId, message);
+}
+
+export function stopLanguageServer(sessionId: string): Promise<boolean> {
+  return bridge().stopLanguageServer(sessionId);
+}
+
+export function onLanguageServerMessage(
+  callback: (event: LspServerEvent) => void
+): () => void {
+  return bridge().onLanguageServerMessage(callback);
 }
 
 export function closeWindow(): Promise<void> {

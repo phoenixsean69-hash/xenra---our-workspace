@@ -5,6 +5,10 @@ import type {
   RuntimeTraceMessage,
   RuntimeTraceSessionStart
 } from "./runtime/types";
+import type {
+  LspServerEvent,
+  LspServerStart
+} from "./lsp/types";
 
 type XenraDesktopBridge = {
   chooseProjectFolder(): Promise<string | null>;
@@ -29,6 +33,10 @@ type XenraDesktopBridge = {
   beginPythonTrace(sessionId: string): Promise<boolean>;
   stopPythonTrace(sessionId: string): Promise<boolean>;
   onPythonTraceMessage(callback: (message: RuntimeTraceMessage) => void): () => void;
+  startLanguageServer(serviceId: string, workspaceRoot: string): Promise<LspServerStart>;
+  sendLanguageServerMessage(sessionId: string, message: unknown): Promise<boolean>;
+  stopLanguageServer(sessionId: string): Promise<boolean>;
+  onLanguageServerMessage(callback: (event: LspServerEvent) => void): () => void;
   closeWindow(): Promise<void>;
 };
 

@@ -187,6 +187,573 @@ async function detectToolchains(cwdValue) {
   };
 }
 
+
+const XENRA_ROOT = path.resolve(__dirname, "..");
+const XENRA_TOOLS_ROOT = path.join(XENRA_ROOT, ".xenra-tools");
+
+const LANGUAGE_SERVER_LABELS = {
+  python: "Python",
+  clangd: "C / C++",
+  java: "Java",
+  csharp: "C#",
+  go: "Go",
+  rust: "Rust",
+  php: "PHP",
+  ruby: "Ruby",
+  powershell: "PowerShell",
+  shell: "Shell / Bash",
+  assembly: "Assembly"
+};
+
+const LANGUAGE_SERVER_INSTALL_HINTS = {
+  python: "Install Pyright language service.",
+  clangd: "Install clangd language service.",
+  java: "Install Eclipse JDT Language Server.",
+  csharp: "Install csharp-ls.",
+  go: "Install gopls.",
+  rust: "Install rust-analyzer.",
+  php: "Install Intelephense or phpactor.",
+  ruby: "Install ruby-lsp.",
+  powershell: "Install PowerShell Editor Services.",
+  shell: "Install bash-language-server.",
+  assembly: "Install asm-lsp; clangd is used as a fallback."
+};
+
+const languageServerSessions = new Map();
+const languageServerCleanupSenders = new Set();
+
+function xenraToolPath(...segments) {
+  return path.join(XENRA_TOOLS_ROOT, ...segments);
+}
+
+async function exists(targetPath) {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveExecutable(executable, cwd) {
+  if (!executable) return null;
+
+  const looksLikePath =
+    path.isAbsolute(executable) ||
+    executable.includes("/") ||
+    executable.includes("\\");
+
+  if (looksLikePath) {
+    return await exists(executable) ? executable : null;
+  }
+
+  const locator = process.platform === "win32" ? "where.exe" : "which";
+  const located = await runCapture(locator, [executable], cwd);
+
+  if (located.exitCode !== 0) return null;
+
+  return located.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean) ?? null;
+}
+
+async function findFileRecursive(root, predicate, depth = 5) {
+  if (depth < 0 || !(await exists(root))) return null;
+
+  let entries;
+  try {
+    entries = await fs.readdir(root, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+
+  for (const entry of entries) {
+    const fullPath = path.join(root, entry.name);
+    if (entry.isFile() && predicate(entry.name, fullPath)) {
+      return fullPath;
+    }
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const found = await findFileRecursive(
+      path.join(root, entry.name),
+      predicate,
+      depth - 1
+    );
+    if (found) return found;
+  }
+
+  return null;
+}
+
+function workspaceCacheKey(workspaceRoot) {
+  return Buffer
+    .from(path.resolve(workspaceRoot), "utf8")
+    .toString("base64url")
+    .slice(0, 36);
+}
+
+async function buildLanguageServerCandidates(serviceId, workspaceRoot) {
+  const isWindows = process.platform === "win32";
+  const localNodeBin = (name) =>
+    xenraToolPath(
+      "node",
+      "node_modules",
+      ".bin",
+      isWindows ? `${name}.cmd` : name
+    );
+
+  const projectNodeBin = (name) =>
+    path.join(
+      XENRA_ROOT,
+      "node_modules",
+      ".bin",
+      isWindows ? `${name}.cmd` : name
+    );
+
+  const candidates = {
+    python: [
+      { name: "XENRA Pyright", executable: localNodeBin("pyright-langserver"), args: ["--stdio"] },
+      { name: "Project Pyright", executable: projectNodeBin("pyright-langserver"), args: ["--stdio"] },
+      { name: "BasedPyright", executable: "basedpyright-langserver", args: ["--stdio"] },
+      { name: "Pyright", executable: "pyright-langserver", args: ["--stdio"] },
+      { name: "Python LSP Server", executable: "pylsp", args: [] }
+    ],
+    clangd: [
+      { name: "XENRA clangd", executable: xenraToolPath("clangd", "bin", isWindows ? "clangd.exe" : "clangd"), args: ["--background-index", "--clang-tidy"] },
+      { name: "clangd", executable: "clangd", args: ["--background-index", "--clang-tidy"] }
+    ],
+    csharp: [
+      { name: "XENRA csharp-ls", executable: xenraToolPath("dotnet", isWindows ? "csharp-ls.exe" : "csharp-ls"), args: [] },
+      { name: "csharp-ls", executable: "csharp-ls", args: [] }
+    ],
+    go: [
+      { name: "XENRA gopls", executable: xenraToolPath("go", isWindows ? "gopls.exe" : "gopls"), args: [] },
+      { name: "gopls", executable: "gopls", args: [] }
+    ],
+    rust: [
+      { name: "XENRA rust-analyzer", executable: xenraToolPath("rust", isWindows ? "rust-analyzer.exe" : "rust-analyzer"), args: [] },
+      { name: "rust-analyzer", executable: "rust-analyzer", args: [] }
+    ],
+    php: [
+      { name: "XENRA Intelephense", executable: localNodeBin("intelephense"), args: ["--stdio"] },
+      { name: "Project Intelephense", executable: projectNodeBin("intelephense"), args: ["--stdio"] },
+      { name: "Intelephense", executable: "intelephense", args: ["--stdio"] },
+      { name: "Phpactor", executable: "phpactor", args: ["language-server"] }
+    ],
+    ruby: [
+      { name: "XENRA Ruby LSP", executable: xenraToolPath("ruby", "bin", isWindows ? "ruby-lsp.bat" : "ruby-lsp"), args: [] },
+      { name: "Ruby LSP", executable: "ruby-lsp", args: [] }
+    ],
+    shell: [
+      { name: "XENRA Bash Language Server", executable: localNodeBin("bash-language-server"), args: ["start"] },
+      { name: "Project Bash Language Server", executable: projectNodeBin("bash-language-server"), args: ["start"] },
+      { name: "Bash Language Server", executable: "bash-language-server", args: ["start"] }
+    ],
+    assembly: [
+      { name: "XENRA asm-lsp", executable: xenraToolPath("asm", "bin", isWindows ? "asm-lsp.exe" : "asm-lsp"), args: [] },
+      { name: "asm-lsp", executable: "asm-lsp", args: [] },
+      { name: "XENRA clangd fallback", executable: xenraToolPath("clangd", "bin", isWindows ? "clangd.exe" : "clangd"), args: ["--background-index"] },
+      { name: "clangd fallback", executable: "clangd", args: ["--background-index"] }
+    ]
+  };
+
+  if (serviceId === "java") {
+    const jdtRoot = xenraToolPath("jdtls");
+    const java = await resolveExecutable("java", workspaceRoot);
+    const launcher = await findFileRecursive(
+      path.join(jdtRoot, "plugins"),
+      (name) =>
+        name.startsWith("org.eclipse.equinox.launcher_") &&
+        name.endsWith(".jar"),
+      2
+    );
+
+    const configName =
+      process.platform === "win32"
+        ? "config_win"
+        : process.platform === "darwin"
+          ? "config_mac"
+          : "config_linux";
+
+    const configPath = path.join(jdtRoot, configName);
+
+    if (java && launcher && await exists(configPath)) {
+      const dataPath = path.join(
+        app.getPath("userData"),
+        "lsp",
+        "jdtls",
+        workspaceCacheKey(workspaceRoot)
+      );
+      await fs.mkdir(dataPath, { recursive: true });
+
+      return [
+        {
+          name: "XENRA Eclipse JDT LS",
+          executable: java,
+          args: [
+            "-Declipse.application=org.eclipse.jdt.ls.core.id1",
+            "-Dosgi.bundles.defaultStartLevel=4",
+            "-Declipse.product=org.eclipse.jdt.ls.core.product",
+            "-Dlog.level=ERROR",
+            "-Xmx1G",
+            "--add-modules=ALL-SYSTEM",
+            "--add-opens",
+            "java.base/java.util=ALL-UNNAMED",
+            "--add-opens",
+            "java.base/java.lang=ALL-UNNAMED",
+            "-jar",
+            launcher,
+            "-configuration",
+            configPath,
+            "-data",
+            dataPath
+          ]
+        },
+        { name: "jdtls", executable: "jdtls", args: ["-data", dataPath] }
+      ];
+    }
+
+    return [
+      { name: "jdtls", executable: "jdtls", args: [] }
+    ];
+  }
+
+  if (serviceId === "powershell") {
+    const psesRoot = xenraToolPath("powershell-editor-services");
+    const startScript = await findFileRecursive(
+      psesRoot,
+      (name) => name === "Start-EditorServices.ps1",
+      6
+    );
+
+    if (!startScript) return [];
+
+    const shells = process.platform === "win32"
+      ? ["pwsh", "powershell"]
+      : ["pwsh"];
+
+    return shells.map((shellName) => ({
+      name: `PowerShell Editor Services (${shellName})`,
+      executable: shellName,
+      args: [
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        startScript,
+        "-Stdio",
+        "-LogLevel",
+        "Error"
+      ],
+      env: {
+        NO_COLOR: "1",
+        TERM: "dumb"
+      }
+    }));
+  }
+
+  return candidates[serviceId] ?? [];
+}
+
+async function resolveLanguageServer(serviceId, workspaceRoot) {
+  const candidates = await buildLanguageServerCandidates(serviceId, workspaceRoot);
+
+  for (const candidate of candidates) {
+    const executable = await resolveExecutable(candidate.executable, workspaceRoot);
+    if (!executable) continue;
+
+    return {
+      ...candidate,
+      executable
+    };
+  }
+
+  return null;
+}
+
+function sendLanguageServerEvent(session, event) {
+  if (!session?.sender || session.sender.isDestroyed()) return;
+
+  session.sender.send("lsp:server-event", {
+    sessionId: session.id,
+    ...event
+  });
+}
+
+function parseLanguageServerOutput(session, chunk) {
+  if (session.finished) return;
+
+  const incoming = Buffer.isBuffer(chunk)
+    ? chunk
+    : Buffer.from(chunk);
+
+  session.stdoutBuffer = Buffer.concat([
+    session.stdoutBuffer,
+    incoming
+  ]);
+
+  while (session.stdoutBuffer.length) {
+    const headerStart = session.stdoutBuffer.indexOf("Content-Length:");
+
+    if (headerStart < 0) {
+      if (session.stdoutBuffer.length > 65536) {
+        session.stdoutBuffer = Buffer.alloc(0);
+      }
+      return;
+    }
+
+    if (headerStart > 0) {
+      session.stdoutBuffer = session.stdoutBuffer.subarray(headerStart);
+    }
+
+    const headerEnd = session.stdoutBuffer.indexOf("\r\n\r\n");
+    if (headerEnd < 0) return;
+
+    const header = session.stdoutBuffer
+      .subarray(0, headerEnd)
+      .toString("ascii");
+
+    const lengthMatch = header.match(/Content-Length:\s*(\d+)/i);
+    if (!lengthMatch) {
+      session.stdoutBuffer = session.stdoutBuffer.subarray(headerEnd + 4);
+      continue;
+    }
+
+    const contentLength = Number(lengthMatch[1]);
+    if (!Number.isFinite(contentLength) || contentLength < 0 || contentLength > 32 * 1024 * 1024) {
+      session.stdoutBuffer = session.stdoutBuffer.subarray(headerEnd + 4);
+      continue;
+    }
+
+    const bodyStart = headerEnd + 4;
+    const bodyEnd = bodyStart + contentLength;
+    if (session.stdoutBuffer.length < bodyEnd) return;
+
+    const body = session.stdoutBuffer
+      .subarray(bodyStart, bodyEnd)
+      .toString("utf8");
+
+    session.stdoutBuffer = session.stdoutBuffer.subarray(bodyEnd);
+
+    try {
+      const message = JSON.parse(body);
+      sendLanguageServerEvent(session, {
+        type: "message",
+        message
+      });
+    } catch (error) {
+      sendLanguageServerEvent(session, {
+        type: "error",
+        message: `Invalid LSP JSON from ${session.serverName}: ${errorMessage(error)}`
+      });
+    }
+  }
+}
+
+function writeLanguageServerMessage(session, message) {
+  if (!session || session.finished) return false;
+
+  const stdin = session.child?.stdin;
+  if (!stdin || stdin.destroyed || !stdin.writable) return false;
+
+  let json;
+  try {
+    json = JSON.stringify(message);
+  } catch {
+    return false;
+  }
+
+  const body = Buffer.from(json, "utf8");
+  const header = Buffer.from(
+    `Content-Length: ${body.length}\r\n\r\n`,
+    "ascii"
+  );
+
+  stdin.write(header);
+  stdin.write(body);
+  return true;
+}
+
+function stopLanguageServerSession(session) {
+  if (!session || session.finished) return false;
+
+  session.stopRequested = true;
+  const child = session.child;
+
+  if (!child || child.killed) {
+    session.finished = true;
+    languageServerSessions.delete(session.id);
+    return true;
+  }
+
+  if (process.platform === "win32" && child.pid) {
+    const killer = spawn(
+      "taskkill",
+      ["/PID", String(child.pid), "/T", "/F"],
+      { windowsHide: true }
+    );
+
+    killer.on("error", () => {
+      try { child.kill(); } catch { /* already stopped */ }
+    });
+  } else {
+    try { child.kill("SIGTERM"); } catch { /* already stopped */ }
+  }
+
+  setTimeout(() => {
+    if (!session.finished && session.child === child) {
+      try { child.kill("SIGKILL"); } catch { /* already stopped */ }
+    }
+  }, 1200);
+
+  return true;
+}
+
+function stopLanguageServersForSender(senderId) {
+  for (const session of languageServerSessions.values()) {
+    if (session.senderId === senderId) {
+      stopLanguageServerSession(session);
+    }
+  }
+}
+
+async function startLanguageServerSession(sender, serviceIdValue, workspaceRootValue) {
+  const serviceId = String(serviceIdValue ?? "");
+  const workspaceRoot = path.resolve(String(workspaceRootValue ?? ""));
+
+  if (!LANGUAGE_SERVER_LABELS[serviceId]) {
+    throw new Error(`Unsupported language service: ${serviceId}`);
+  }
+
+  const workspaceStat = await fs.stat(workspaceRoot);
+  if (!workspaceStat.isDirectory()) {
+    throw new Error("Language server workspace root is not a directory.");
+  }
+
+  for (const session of languageServerSessions.values()) {
+    if (
+      session.senderId === sender.id &&
+      session.serviceId === serviceId &&
+      session.workspaceRoot === workspaceRoot &&
+      !session.finished
+    ) {
+      return {
+        available: true,
+        serviceId,
+        languageLabel: LANGUAGE_SERVER_LABELS[serviceId],
+        sessionId: session.id,
+        serverName: session.serverName,
+        executable: session.executable
+      };
+    }
+  }
+
+  const resolved = await resolveLanguageServer(serviceId, workspaceRoot);
+
+  if (!resolved) {
+    return {
+      available: false,
+      serviceId,
+      languageLabel: LANGUAGE_SERVER_LABELS[serviceId],
+      installHint: LANGUAGE_SERVER_INSTALL_HINTS[serviceId],
+      error: "Language server not detected."
+    };
+  }
+
+  const child = spawn(
+    resolved.executable,
+    resolved.args ?? [],
+    {
+      cwd: workspaceRoot,
+      windowsHide: true,
+      shell:
+        process.platform === "win32" &&
+        /\.(cmd|bat)$/i.test(resolved.executable),
+      env: {
+        ...process.env,
+        ...(resolved.env ?? {})
+      },
+      stdio: ["pipe", "pipe", "pipe"]
+    }
+  );
+
+  const session = {
+    id: randomUUID(),
+    serviceId,
+    languageLabel: LANGUAGE_SERVER_LABELS[serviceId],
+    workspaceRoot,
+    sender,
+    senderId: sender.id,
+    serverName: resolved.name,
+    executable: resolved.executable,
+    child,
+    stdoutBuffer: Buffer.alloc(0),
+    stopRequested: false,
+    finished: false
+  };
+
+  languageServerSessions.set(session.id, session);
+
+  child.stdout?.on("data", (chunk) => {
+    parseLanguageServerOutput(session, chunk);
+  });
+
+  child.stderr?.setEncoding("utf8");
+  child.stderr?.on("data", (chunk) => {
+    if (session.finished) return;
+    sendLanguageServerEvent(session, {
+      type: "stderr",
+      chunk: String(chunk)
+    });
+  });
+
+  child.on("error", (error) => {
+    if (session.finished) return;
+    sendLanguageServerEvent(session, {
+      type: "error",
+      message: errorMessage(error)
+    });
+  });
+
+  child.on("close", (code, signal) => {
+    if (session.finished) return;
+
+    session.finished = true;
+    languageServerSessions.delete(session.id);
+
+    sendLanguageServerEvent(session, {
+      type: "exit",
+      exitCode: code ?? (session.stopRequested ? 0 : 1),
+      stopped:
+        session.stopRequested ||
+        signal === "SIGTERM" ||
+        signal === "SIGKILL"
+    });
+  });
+
+  if (!languageServerCleanupSenders.has(sender.id)) {
+    languageServerCleanupSenders.add(sender.id);
+    sender.once("destroyed", () => {
+      languageServerCleanupSenders.delete(sender.id);
+      stopLanguageServersForSender(sender.id);
+    });
+  }
+
+  return {
+    available: true,
+    serviceId,
+    languageLabel: LANGUAGE_SERVER_LABELS[serviceId],
+    sessionId: session.id,
+    serverName: session.serverName,
+    executable: session.executable
+  };
+}
+
+
 const runSessions = new Map();
 const runCleanupSenders = new Set();
 
@@ -989,6 +1556,28 @@ function registerIpc() {
     } catch (error) {
       throw new Error(`Toolchain detection failed: ${errorMessage(error)}`);
     }
+  });
+
+  ipcMain.handle("lsp:start", async (event, { serviceId, workspaceRoot }) => {
+    try {
+      return await startLanguageServerSession(
+        event.sender,
+        serviceId,
+        workspaceRoot
+      );
+    } catch (error) {
+      throw new Error(`Language server start failed: ${errorMessage(error)}`);
+    }
+  });
+
+  ipcMain.handle("lsp:send", async (_event, { sessionId, message }) => {
+    const session = languageServerSessions.get(String(sessionId ?? ""));
+    return writeLanguageServerMessage(session, message);
+  });
+
+  ipcMain.handle("lsp:stop", async (_event, { sessionId }) => {
+    const session = languageServerSessions.get(String(sessionId ?? ""));
+    return stopLanguageServerSession(session);
   });
 
   ipcMain.handle("git:run", async (_event, { cwd, args }) => {

@@ -39,6 +39,17 @@ const xenraApi = {
     ipcRenderer.on("runtime:python-trace-message", listener);
     return () => ipcRenderer.removeListener("runtime:python-trace-message", listener);
   },
+  startLanguageServer: (serviceId, workspaceRoot) =>
+    ipcRenderer.invoke("lsp:start", { serviceId, workspaceRoot }),
+  sendLanguageServerMessage: (sessionId, message) =>
+    ipcRenderer.invoke("lsp:send", { sessionId, message }),
+  stopLanguageServer: (sessionId) =>
+    ipcRenderer.invoke("lsp:stop", { sessionId }),
+  onLanguageServerMessage: (callback) => {
+    const listener = (_event, message) => callback(message);
+    ipcRenderer.on("lsp:server-event", listener);
+    return () => ipcRenderer.removeListener("lsp:server-event", listener);
+  },
   closeWindow: () => ipcRenderer.invoke("app:close-window")
 };
 

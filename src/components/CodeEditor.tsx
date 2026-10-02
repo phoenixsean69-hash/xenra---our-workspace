@@ -6,6 +6,7 @@ import cssWorker from "monaco-editor/language/css/css.worker?worker";
 import htmlWorker from "monaco-editor/language/html/html.worker?worker";
 import tsWorker from "monaco-editor/language/typescript/ts.worker?worker";
 import type { EditorProblem, EditorProblemSeverity } from "../editor/types";
+import { attachLanguageServices, fileUriFromPath } from "../lsp/client";
 import type { OpenFile } from "../types";
 
 (self as any).MonacoEnvironment = {
@@ -25,6 +26,8 @@ type Props = {
   onChange: (value: string) => void;
   onSave: () => void;
   onProblemsChange: (problems: EditorProblem[]) => void;
+  workspaceRoot: string | null;
+  onLanguageServiceStatus: (message: string) => void;
 };
 
 function severityFromMarker(value: monaco.MarkerSeverity): EditorProblemSeverity {
@@ -68,7 +71,9 @@ export default function CodeEditor({
   file,
   onChange,
   onSave,
-  onProblemsChange
+  onProblemsChange,
+  workspaceRoot,
+  onLanguageServiceStatus
 }: Props) {
   if (!file) {
     return <div className="empty-editor" aria-label="No file open" />;
@@ -76,7 +81,7 @@ export default function CodeEditor({
 
   return (
     <Editor
-      path={file.path}
+      path={fileUriFromPath(file.path)}
       language={file.language}
       value={file.content}
       theme="xenra-diamond"
@@ -130,7 +135,20 @@ export default function CodeEditor({
       }}
       onChange={(value) => onChange(value ?? "")}
       onMount={(editor) => {
-        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, onSave);
+        let languageServices = attachLanguageServices(
+          monaco,
+          editor,
+          workspaceRoot,
+          onLanguageServiceStatus
+        );
+
+        editor.addCommand(
+          monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
+          () => {
+            onSave();
+            languageServices.didSave();
+          }
+        );
 
         let minimapEnabled = true;
 
@@ -185,6 +203,27 @@ export default function CodeEditor({
               minimapEnabled = !minimapEnabled;
               editor.updateOptions({ minimap: { enabled: minimapEnabled } });
               break;
+            case "suggest":
+              void editor.getAction("editor.action.triggerSuggest")?.run();
+              break;
+            case "quickFix":
+              void editor.getAction("editor.action.quickFix")?.run();
+              break;
+            case "renameSymbol":
+              void editor.getAction("editor.action.rename")?.run();
+              break;
+            case "formatDocument":
+              void editor.getAction("editor.action.formatDocument")?.run();
+              break;
+            case "goToDefinition":
+              void editor.getAction("editor.action.revealDefinition")?.run();
+              break;
+            case "goToReferences":
+              void editor.getAction("editor.action.referenceSearch.trigger")?.run();
+              break;
+            case "didSave":
+              languageServices.didSave();
+              break;
             case "reveal":
               if (action.line) {
                 const line = Math.max(1, action.line);
@@ -198,6 +237,7 @@ export default function CodeEditor({
 
         window.addEventListener("xenra:editor-action", onEditorAction);
         editor.onDidDispose(() => {
+          languageServices.dispose();
           markerSubscription.dispose();
           window.removeEventListener("xenra:editor-action", onEditorAction);
         });

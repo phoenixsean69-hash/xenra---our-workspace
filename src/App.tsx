@@ -178,6 +178,42 @@ export default function App() {
   }, [lastProject, projectRoot, welcomeOpen]);
 
   useEffect(() => {
+    const onLspFileWritten = (
+      event: Event
+    ) => {
+      const detail = (
+        event as CustomEvent<{ path?: string; content?: string }>
+      ).detail;
+
+      if (!detail?.path || detail.content === undefined) return;
+
+      setOpenFiles((files) =>
+        files.map((file) =>
+          file.path === detail.path
+            ? {
+                ...file,
+                content: detail.content as string,
+                savedContent: detail.content as string
+              }
+            : file
+        )
+      );
+    };
+
+    const onLspTreeChanged = () => {
+      setTreeRevision((value) => value + 1);
+    };
+
+    window.addEventListener("xenra:lsp-file-written", onLspFileWritten);
+    window.addEventListener("xenra:lsp-tree-changed", onLspTreeChanged);
+
+    return () => {
+      window.removeEventListener("xenra:lsp-file-written", onLspFileWritten);
+      window.removeEventListener("xenra:lsp-tree-changed", onLspTreeChanged);
+    };
+  }, []);
+
+  useEffect(() => {
     const flushRunOutput = () => {
       runFlushTimerRef.current = null;
 
@@ -659,6 +695,7 @@ export default function App() {
         item.path === file.path ? { ...item, savedContent: item.content } : item
       ));
       setStatus(`Saved ${file.name}`);
+      emitEditorAction("didSave");
     } catch (error) {
       setStatus(`Save failed: ${String(error)}`);
     }
@@ -1032,6 +1069,18 @@ export default function App() {
       case "edit.find":
         emitEditorAction("find");
         break;
+      case "edit.suggest":
+        emitEditorAction("suggest");
+        break;
+      case "edit.quickFix":
+        emitEditorAction("quickFix");
+        break;
+      case "edit.rename":
+        emitEditorAction("renameSymbol");
+        break;
+      case "edit.format":
+        emitEditorAction("formatDocument");
+        break;
 
       case "selection.all":
         emitEditorAction("selectAll");
@@ -1065,6 +1114,12 @@ export default function App() {
 
       case "go.line":
         emitEditorAction("goToLine");
+        break;
+      case "go.definition":
+        emitEditorAction("goToDefinition");
+        break;
+      case "go.references":
+        emitEditorAction("goToReferences");
         break;
       case "go.nextEditor":
         moveEditor(1);
@@ -1434,10 +1489,13 @@ export default function App() {
 
           <div className="editor-area">
             <CodeEditor
+              key={projectRoot ?? "no-workspace"}
               file={activeFile}
               onChange={changeActiveContent}
               onSave={saveActive}
               onProblemsChange={setEditorProblems}
+              workspaceRoot={projectRoot}
+              onLanguageServiceStatus={setStatus}
             />
           </div>
 
@@ -1502,6 +1560,12 @@ export default function App() {
                 <span>Source Control</span><kbd>Ctrl+Shift+G</kbd>
                 <span>Terminal</span><kbd>Ctrl+`</kbd>
                 <span>Run</span><kbd>F5</kbd>
+                <span>Suggestions</span><kbd>Ctrl+Space</kbd>
+                <span>Quick Fix</span><kbd>Ctrl+.</kbd>
+                <span>Rename Symbol</span><kbd>F2</kbd>
+                <span>Definition</span><kbd>F12</kbd>
+                <span>References</span><kbd>Shift+F12</kbd>
+                <span>Format Document</span><kbd>Shift+Alt+F</kbd>
               </div>
             )}
           </section>
