@@ -64,6 +64,7 @@ let monacoRef: MonacoApi | null = null;
 let transportDispose: (() => void) | null = null;
 let providersInstalled = false;
 let lspCommandRegistered = false;
+let editorOpenerInstalled = false;
 
 const EXECUTE_COMMAND_ID = "xenra.lsp.executeCommand";
 const APPLY_ACTION_ID = "xenra.lsp.applyAction";
@@ -103,6 +104,78 @@ function filePathFromUri(uri: string) {
 function baseName(pathValue: string) {
   const normalized = pathValue.replace(/\\/g, "/");
   return normalized.split("/").filter(Boolean).pop() ?? pathValue;
+}
+
+function normalizedPath(value: string) {
+  const normalized = value.replace(/\\/g, "/").replace(/\/+$/, "");
+  return /^[A-Za-z]:\//.test(normalized)
+    ? normalized.toLowerCase()
+    : normalized;
+}
+
+function pathIsInsideWorkspace(pathValue: string, workspaceRoot: string) {
+  const candidate = normalizedPath(pathValue);
+  const root = normalizedPath(workspaceRoot);
+
+  return candidate === root || candidate.startsWith(`${root}/`);
+}
+
+function selectionStart(selectionOrPosition: any) {
+  if (!selectionOrPosition) {
+    return { line: undefined, column: undefined };
+  }
+
+  if (
+    typeof selectionOrPosition.startLineNumber === "number" &&
+    typeof selectionOrPosition.startColumn === "number"
+  ) {
+    return {
+      line: selectionOrPosition.startLineNumber,
+      column: selectionOrPosition.startColumn
+    };
+  }
+
+  if (
+    typeof selectionOrPosition.lineNumber === "number" &&
+    typeof selectionOrPosition.column === "number"
+  ) {
+    return {
+      line: selectionOrPosition.lineNumber,
+      column: selectionOrPosition.column
+    };
+  }
+
+  return { line: undefined, column: undefined };
+}
+
+function installEditorOpener(monacoApi: MonacoApi) {
+  if (editorOpenerInstalled) return;
+
+  monacoApi.editor.registerEditorOpener({
+    openCodeEditor(
+      _source: Monaco.editor.ICodeEditor,
+      resource: Monaco.Uri,
+      selectionOrPosition?: Monaco.IPosition | Monaco.IRange
+    ) {
+      if (resource.scheme !== "file") return false;
+
+      const { line, column } = selectionStart(selectionOrPosition);
+
+      window.dispatchEvent(
+        new CustomEvent("xenra:lsp-open-resource", {
+          detail: {
+            path: filePathFromUri(resource.toString()),
+            line,
+            column
+          }
+        })
+      );
+
+      return true;
+    }
+  });
+
+  editorOpenerInstalled = true;
 }
 
 function ensureTransport() {
@@ -688,7 +761,15 @@ class LspConnection {
   async safeRequest(method: string, params: any, fallback: any = null) {
     try {
       return await this.request(method, params);
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : String(error);
+
+      this.statusSink(
+        `${this.serverName}: ${method} failed - ${message.slice(0, 160)}`
+      );
+
       return fallback;
     }
   }
@@ -1108,6 +1189,7 @@ function installProviders(monacoApi: MonacoApi) {
   monacoRef = monacoApi;
 
   installGlobalCommands(monacoApi);
+  installEditorOpener(monacoApi);
 
   const languages = Object.keys(SERVICE_BY_MONACO_LANGUAGE);
 
@@ -1685,76 +1767,145 @@ export function attachLanguageServices(
   monacoRef = monacoApi;
   installProviders(monacoApi);
 
-  let activeModel: TextModel | null = null;
-  let contentDisposable: Disposable | null = null;
-  let attachGeneration = 0;
-
-  const detachCurrentModel = () => {
-    contentDisposable?.dispose();
-    contentDisposable = null;
-
-    if (activeModel) {
-      const uri = activeModel.uri.toString();
-      const connection = documentConnections.get(uri);
-      connection?.closeDocument(activeModel);
-      documentConnections.delete(uri);
-      activeModel = null;
-    }
+  type ModelBinding = {
+    model: TextModel;
+    connection: LspConnection;
+    contentDisposable: Disposable;
   };
 
-  const attachCurrentModel = async () => {
-    const generation = ++attachGeneration;
-    detachCurrentModel();
+  const bindings = new Map<string, ModelBinding>();
+  const attaching = new Set<string>();
+  let disposed = false;
 
-    if (!workspaceRoot) return;
+  const detachModel = (model: TextModel) => {
+    const uri = model.uri.toString();
+    const binding = bindings.get(uri);
 
-    const model = editor.getModel();
-    if (!model) return;
+    if (!binding) {
+      documentConnections.delete(uri);
+      return;
+    }
+
+    binding.contentDisposable.dispose();
+    binding.connection.closeDocument(binding.model);
+    bindings.delete(uri);
+    documentConnections.delete(uri);
+  };
+
+  const attachModel = async (model: TextModel) => {
+    if (disposed || !workspaceRoot) return;
+    if (model.uri.scheme !== "file") return;
+
+    const uri = model.uri.toString();
+
+    if (bindings.has(uri) || attaching.has(uri)) {
+      return;
+    }
+
+    const modelPath = filePathFromUri(uri);
+
+    if (!pathIsInsideWorkspace(modelPath, workspaceRoot)) {
+      return;
+    }
 
     const serviceId = SERVICE_BY_MONACO_LANGUAGE[model.getLanguageId()];
     if (!serviceId) return;
 
-    const connection = await ensureConnection(
-      serviceId,
-      workspaceRoot,
-      statusSink
-    );
+    attaching.add(uri);
 
-    if (!connection || generation !== attachGeneration) return;
+    try {
+      const connection = await ensureConnection(
+        serviceId,
+        workspaceRoot,
+        statusSink
+      );
 
-    activeModel = model;
-    documentConnections.set(model.uri.toString(), connection);
-    connection.openDocument(model);
+      if (
+        disposed ||
+        !connection ||
+        monacoApi.editor.getModel(model.uri) !== model
+      ) {
+        return;
+      }
 
-    contentDisposable = model.onDidChangeContent(() => {
-      connection.changeDocument(model);
-    });
+      documentConnections.set(uri, connection);
+      connection.openDocument(model);
+
+      const contentDisposable = model.onDidChangeContent(() => {
+        connection.changeDocument(model);
+      });
+
+      bindings.set(uri, {
+        model,
+        connection,
+        contentDisposable
+      });
+    } finally {
+      attaching.delete(uri);
+    }
   };
 
-  const modelDisposable = editor.onDidChangeModel(() => {
-    void attachCurrentModel();
+  for (const model of monacoApi.editor.getModels()) {
+    void attachModel(model);
+  }
+
+  const createModelDisposable = monacoApi.editor.onDidCreateModel((model) => {
+    void attachModel(model);
   });
 
-  void attachCurrentModel();
+  const disposeModelDisposable = monacoApi.editor.onWillDisposeModel((model) => {
+    detachModel(model);
+  });
+
+  const languageDisposable = monacoApi.editor.onDidChangeModelLanguage((event) => {
+    detachModel(event.model);
+    void attachModel(event.model);
+  });
+
+  const activeModelDisposable = editor.onDidChangeModel(() => {
+    const model = editor.getModel();
+    if (model) {
+      void attachModel(model);
+    }
+  });
+
+  const currentModel = editor.getModel();
+  if (currentModel) {
+    void attachModel(currentModel);
+  }
 
   return {
     didSave() {
       const model = editor.getModel();
-      const connection = model ? documentConnections.get(model.uri.toString()) : null;
+      const connection = model
+        ? documentConnections.get(model.uri.toString())
+        : null;
+
       if (model && connection) {
         connection.saveDocument(model);
       }
     },
 
     dispose() {
-      attachGeneration += 1;
-      modelDisposable.dispose();
-      detachCurrentModel();
+      disposed = true;
+
+      createModelDisposable.dispose();
+      disposeModelDisposable.dispose();
+      languageDisposable.dispose();
+      activeModelDisposable.dispose();
+
+      for (const binding of [...bindings.values()]) {
+        binding.contentDisposable.dispose();
+        binding.connection.closeDocument(binding.model);
+      }
+
+      bindings.clear();
+      attaching.clear();
+      documentConnections.clear();
 
       const all = [...connections.values()];
       connections.clear();
       connectionPromises.clear();
-      documentConnections.clear();
       sessionConnections.clear();
 
       for (const connection of all) {

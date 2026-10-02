@@ -611,6 +611,38 @@ export default function App() {
     );
   }, [openFile]);
 
+  useEffect(() => {
+    const onLspOpenResource = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          path?: string;
+          line?: number;
+          column?: number;
+        }>
+      ).detail;
+
+      if (!detail?.path) return;
+
+      void openAbsolutePath(
+        detail.path,
+        detail.line,
+        detail.column
+      );
+    };
+
+    window.addEventListener(
+      "xenra:lsp-open-resource",
+      onLspOpenResource
+    );
+
+    return () => {
+      window.removeEventListener(
+        "xenra:lsp-open-resource",
+        onLspOpenResource
+      );
+    };
+  }, [openAbsolutePath]);
+
   const createWelcomeFile = useCallback(async (
     requestedName: string,
     targetDirectory?: string | null

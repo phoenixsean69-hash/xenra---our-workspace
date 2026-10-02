@@ -3758,3 +3758,92 @@ body.xenra-resizing-horizontal * {
   color: #6f7786;
   font: 9px/1.3 "Cascadia Mono", Consolas, monospace;
 }
+
+/* XENRA Explorer inline file operations */
+
+.panel-actions button.active:not(:disabled) {
+  color: var(--gold);
+}
+
+.explorer-inline-edit {
+  display: grid;
+  gap: 4px;
+  margin: 1px 0 6px;
+  padding: 0;
+}
+
+.explorer-inline-edit-row {
+  min-width: 0;
+  height: 30px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+}
+
+.explorer-inline-edit-icon {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  color: #aab1bf;
+}
+
+.explorer-inline-edit-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.explorer-inline-edit input {
+  min-width: 0;
+  width: 100%;
+  height: 26px;
+  border: 1px solid #4a4d55;
+  border-radius: 0;
+  outline: none;
+  background: #15161a;
+  padding: 0 6px;
+  color: #d6dae1;
+  font: 12px/1 "Cascadia Code", "Cascadia Mono", Consolas, monospace;
+}
+
+.explorer-inline-edit input:focus {
+  border-color: #9a7a20;
+  box-shadow: 0 0 0 1px #9a7a20;
+}
+
+.explorer-inline-edit input:disabled {
+  opacity: .62;
+}
+
+.explorer-inline-edit-meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-left: 26px;
+  color: #666d79;
+  font-size: 9px;
+  line-height: 1.25;
+}
+
+.explorer-inline-edit-meta span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explorer-inline-edit-meta span:last-child {
+  flex: 0 0 auto;
+  color: #555c67;
+}
+
+.explorer-inline-edit-error {
+  margin-left: 26px;
+  color: #d77a7a;
+  font-size: 9px;
+  line-height: 1.3;
+}
+
