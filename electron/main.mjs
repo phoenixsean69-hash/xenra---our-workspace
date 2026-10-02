@@ -313,6 +313,13 @@ async function buildLanguageServerCandidates(serviceId, workspaceRoot) {
       isWindows ? `${name}.cmd` : name
     );
 
+  const clangdExecutableName = isWindows ? "clangd.exe" : "clangd";
+  const bundledClangd = await findFileRecursive(
+    xenraToolPath("clangd"),
+    (name) => name === clangdExecutableName,
+    6
+  );
+
   const candidates = {
     python: [
       { name: "XENRA Pyright", executable: localNodeBin("pyright-langserver"), args: ["--stdio"] },
@@ -322,7 +329,9 @@ async function buildLanguageServerCandidates(serviceId, workspaceRoot) {
       { name: "Python LSP Server", executable: "pylsp", args: [] }
     ],
     clangd: [
-      { name: "XENRA clangd", executable: xenraToolPath("clangd", "bin", isWindows ? "clangd.exe" : "clangd"), args: ["--background-index", "--clang-tidy"] },
+      ...(bundledClangd
+        ? [{ name: "XENRA clangd", executable: bundledClangd, args: ["--background-index", "--clang-tidy"] }]
+        : []),
       { name: "clangd", executable: "clangd", args: ["--background-index", "--clang-tidy"] }
     ],
     csharp: [
@@ -355,7 +364,9 @@ async function buildLanguageServerCandidates(serviceId, workspaceRoot) {
     assembly: [
       { name: "XENRA asm-lsp", executable: xenraToolPath("asm", "bin", isWindows ? "asm-lsp.exe" : "asm-lsp"), args: [] },
       { name: "asm-lsp", executable: "asm-lsp", args: [] },
-      { name: "XENRA clangd fallback", executable: xenraToolPath("clangd", "bin", isWindows ? "clangd.exe" : "clangd"), args: ["--background-index"] },
+      ...(bundledClangd
+        ? [{ name: "XENRA clangd fallback", executable: bundledClangd, args: ["--background-index"] }]
+        : []),
       { name: "clangd fallback", executable: "clangd", args: ["--background-index"] }
     ]
   };
